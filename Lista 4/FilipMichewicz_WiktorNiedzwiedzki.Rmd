@@ -1,0 +1,3213 @@
+---
+title: "Raport - Klasyfikacja na bazie regresji liniowej i porównanie metod klasyfikacji"
+author: "Filip Michewicz 282239  \n  Wiktor Niedźwiedzki 258882"
+date: "28 maja 2025 Anno Domini"
+output:
+  pdf_document:
+    number_sections: true
+toc: true
+lof: true
+lot: true
+header-includes:
+  - \usepackage[OT4]{polski}
+  - \usepackage[utf8]{inputenc}
+  - \usepackage{graphicx}
+  - \usepackage{float}
+  - \renewcommand{\contentsname}{Spis treści}
+  - \renewcommand{\listfigurename}{Spis wykresów}
+  - \renewcommand{\listtablename}{Spis tabel}
+  - \renewcommand{\figurename}{Wykres}
+  - \renewcommand{\tablename}{Tabela}
+  - \usepackage{xcolor}
+  - \definecolor{ForestGreen}{rgb}{0.1333, 0.5451, 0.1333}
+  - \definecolor{SteelBlue}{rgb}{0.2745, 0.5098, 0.7059}
+  - \definecolor{Tomato}{rgb}{1.0, 0.3882, 0.2784}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  dpi = 1200,
+  message = FALSE,
+  warning = FALSE,
+  error = TRUE,
+  eval = TRUE,
+  echo = FALSE,
+  fig.align="center",
+  fig.width = 7,
+  fig.height = 4,
+  fig.pos = "H",
+  out.extra = '')
+```
+
+```{r biblioteki+zmienne_pomocnicze}
+library(knitr)
+library(xtable)
+library(kableExtra)
+library(tidyverse)
+library(ggplot2)
+library(HDclassif)
+library(class)
+library(gridExtra)
+library(GGally)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(arules)
+library(reshape2)
+library(microbenchmark)
+
+start <- Sys.time()
+
+data(iris)
+data(wine)
+set.seed(21370)
+```
+
+\newpage
+
+# Klasyfikacja na bazie modelu regresji liniowej
+
+W tym zadaniu zostanie przeprowadzona klasyfikacja na bazie modelu regresji liniowej zbioru danych *iris* z pakietu *datasets* w R i zawiera wyniki pomiarów dotyczących trzech gatunków irysów:
+
+-   **Setosa**
+-   **Versicolor**
+-   **Virginica**
+
+Dane zostały udostępnione przez znanego brytyjskiego statystyka, Ronalda Fishera, w 1936 roku i od tego czasu stały się klasycznym przykładem w wielu analizach statystycznych oraz w kontekście algorytmów klasyfikacyjnych.
+
+## Charakterystyka danych
+
+Zbiór danych *Iris* zawiera **`r nrow(iris)`** przypadków, po 50 dla każdego z trzech gatunków oraz **`r ncol(iris)`** cech. Liczba brakujących danych wynosi **`r sum(is.na(iris))`**.
+
+Znaczenie poszczególnych cech oraz ich typ przedstawiono w Tabeli 1.
+
+```{r, cache=TRUE}
+df_table <- data.frame(
+  Typ = sapply(iris, class),
+  Opis = c("Długość działki kielicha (cm)",
+           "Szerokość działki kielicha (cm)",
+           "Długość płatka (cm)",
+           "Szerokość płatka (cm)",
+           "Gatunek (setosa, versicolor, virginica)")
+)
+
+kable(df_table,
+      col.names = c("Zmienna", "Typ", "Opis"),
+      caption = "Opis zmiennych w zbiorze danych iris") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Sprawdzono częstość występowania poszczególnych wartości zmiennych klasyfikacyjnych. Wyniki zaprezentowano na Wykresie 1.
+
+```{r echo=TRUE, fig.cap="Częstości etykiet w zbiorze iris", cache = TRUE}
+etykiety <- iris$Species
+n <- length(etykiety)
+K <- length(unique(etykiety))
+
+ggplot(data.frame(etykiety), aes(x = etykiety, fill = etykiety)) +
+  geom_bar() +
+  labs(x = "Etykiety", y = "Liczba wystąpień") +
+  scale_fill_manual(values = c("tomato", "darkgreen", "steelblue")) + 
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Wszystkie zmienne klasyfikacyjne wystepują z jednokową częstotliwością.
+
+Wszystkie cechy dotyczące kwiatów są miarami ciągłymi (choć zbierane w sposób dyskretny) i różnią się w zależności od gatunku irysa, który jest zmienną jakościową. Celem analizy będzie zrozumienie, w jaki sposób te cechy mogą pomóc w klasyfikacji irysów do odpowiednich gatunków oraz zastosowanie różnych technik dyskretyzacji i analizy, aby lepiej zrozumieć właściwości tych danych.
+
+## Budowa klasyfikatora
+
+W tej części przeprowadzono konstrukcję klasyfikatora opartego na regresji liniowej. Zbiór danych podzielono w stosunku 2:1 na zbiór treningowy oraz testowy.
+
+```{r echo=TRUE, cache=TRUE}
+idx_train <- sort(sample(n, size = floor(2/3 * n)))
+train <- iris[idx_train, ]
+test  <- iris[-idx_train, ]
+
+train_cechy <- train[, -5]
+etykiety <- train$Species
+N <- nrow(train_cechy)
+K <- length(unique(etykiety))
+
+X.train <- as.matrix(cbind(rep(1, N), train_cechy))
+
+Y.train <- matrix(0, nrow=N, ncol=K)
+etykiety.num <- as.numeric(etykiety)
+
+for (k in 1:K) {
+  Y.train[etykiety.num==k, k] <- 1
+}
+
+B.hat <- solve(t(X.train)%*%X.train) %*% t(X.train) %*% Y.train
+```
+
+W Tabeli 2. zestawiono wartości współczynników regresji liniowej przypisanych poszczególnym cechom dla kategorii klasyfikacyjnych w zbiorze danych.
+
+```{r, cache=TRUE}
+rownames(B.hat)[1] <- "1"
+
+kable(B.hat, digits = 3,
+      col.names = c("Kombinacja Cech", "Setosa", "Versicolor", "Virginica"),
+      caption = "Wartości współczynników regresji liniowej dla poszczególnych cech i kategorii") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+## Ewaluacja jakości modelu
+
+W tej części dokonano ewaluacji jakości stworzonego modelu regresji liniowej. Do oceny modelu wykorzystano miarę F1-score, która stanowi harmoniczną średnią precyzji oraz czułości. 
+
+F1-score jest szczególnie użyteczna w przypadkach, gdy istnieje nierównowaga między klasami, ponieważ łączy informacje o dokładności klasyfikacji pozytywnej oraz jej kompletności, zapewniając zrównoważoną ocenę skuteczności modelu.
+
+Matematycznie definiuje się ją jako:
+
+$$
+F_1 = 2 \times \frac{\text{Precyzja} \times \text{Czułość}}{\text{Precyzja} + \text{Czułość}}
+$$
+
+gdzie:
+
+$$
+\text{Precyzja} = \frac{TP}{TP + FP}, \quad \text{Czułość} = \frac{TP}{TP + FN}
+$$
+
+a $TP$ oznacza liczbę prawdziwie pozytywnych klasyfikacji,
+$FP$ – fałszywie pozytywnych,
+$FN$ – fałszywie negatywnych.
+
+Stworzono funkcję, która zwraca najważniejsze miary jakości klasyfikacji, takie jak czułość, precyzja oraz F1-score.
+
+```{r echo = TRUE, cache=TRUE}
+metryki <- function(conf) {
+  TP <- diag(conf)
+  FP <- colSums(conf) - TP
+  FN <- rowSums(conf) - TP
+  TN <- sum(conf) - (TP + FP + FN)
+  
+  precision <- ifelse((TP + FP) == 0, 0, TP / (TP + FP))
+  recall <- ifelse((TP + FN) == 0, 0, TP / (TP + FN))
+  f1 <- ifelse((precision + recall) == 0, 0, 
+               2 * precision * recall / (precision + recall))
+  
+  accuracy <- sum(TP) / sum(conf)
+  accuracy_per_class <- (TP + TN) / (TP + TN + FP + FN)
+  
+  results <- data.frame(
+    Accuracy = accuracy_per_class,
+    Precision = precision,
+    Recall = recall,
+    F1_Score = f1
+  )
+  
+  avg_metrics <- c(
+    Accuracy = mean(accuracy_per_class), 
+    Precision = mean(precision), 
+    Recall = mean(recall), 
+    F1_Score = mean(f1)
+  )
+  
+  results <- rbind(results, avg_metrics)
+  rownames(results)[nrow(results)] <- "Średnie"
+  
+  return(results)
+}
+```
+
+Ewaluacja modelu na zbiorze treningowym.
+
+```{r echo=TRUE, cache=TRUE}
+### Treningowy
+
+Y.hat.train <- X.train %*% B.hat
+pred_train <- apply(Y.hat.train, 1, which.max)
+
+conf.matrix <- table(pred_train, train$Species)
+
+accuracy_a <- sum(diag(conf.matrix))/sum(conf.matrix)
+```
+
+Wyniki klasyfikacji na zbiorze treningowym przedstawiono w macierzy pomyłek zawartej w Tabeli 3.
+
+```{r, cache=TRUE}
+rownames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+colnames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+
+kable(conf.matrix,
+      col.names = c("Gatunek", "setosa", "versicolor", "virginica"),
+      caption = "Macierz pomyłek - zbiór treningowy") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+```
+
+Błąd klasyfikacyjny na zbiorze treningowym wynosi `r (1 - round(accuracy_a,2)) * 100`%. nic nie wskazuje na maskowanie klas.
+
+W Tabeli 4. przedstawiono najwazniejsze metryki klasyfikacyjne dla każdego gatunku.
+
+```{r, cache=TRUE}
+metrics_a <- metryki(conf.matrix)
+kable(metrics_a,
+      col.names = c("Prawdziwy gatunek", "Dokładność", 
+                    "Precyzja", "Czułośc", "F1-score"),
+      caption = "Metryki klasyfikacji dla każdego gatunku - zbiór treningowy",
+      digits = 2, longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0") %>%
+  row_spec(nrow(metrics_a) - 1, hline_after = TRUE)
+```
+
+Średnia dokładność dla każdego gatunku wynosi `r round(metrics_a[4,1] * 100, 0)`%, a F1-score `r round(metrics_a[4,4] * 100, 0)`%, co świadczy o dobrej skuteczności modelu w klasyfikacji poszczególnych kategorii na zbiorze treningowym.
+
+Sprawdzono zdolnosć klasyfikacyjną modelu na zbiorze testowym.
+
+```{r echo=TRUE,cache=TRUE}
+### Testowy
+test_cechy <- test[, -5]
+N <- nrow(test_cechy)
+
+X.test <- as.matrix(cbind(rep(1, N), test_cechy))
+
+Y.hat.test <- X.test %*% B.hat
+pred_test <- apply(Y.hat.test, 1, which.max)
+
+conf.matrix <- table(pred_test, test$Species)
+
+accuracy_b <- sum(diag(conf.matrix))/sum(conf.matrix)
+```
+
+Wyniki klasyfikacji na zbiorze testowym przedstawiono w macierzy pomyłek zawartej w Tabeli 5.
+
+```{r, cache=TRUE}
+rownames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+colnames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+
+kable(conf.matrix,
+      col.names = c("Prawdziwy gatunek", "setosa", "versicolor", "virginica"),
+      caption = "Macierz pomyłek - zbiór testowy") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+```
+
+Błąd klasyfikacyjny na zbiorze testowym wynosi `r (1 - round(accuracy_b,2)) * 100`%. Nic nie wskazuje na maskowanie klas.
+
+```{r, cache=TRUE}
+metrics_b <- metryki(conf.matrix)
+kable(metrics_b,
+      col.names = c("Prawdziwy gatunek", "Dokładność", 
+                    "Precyzja", "Czułośc", "F1-score"),
+      caption = "Metryki klasyfikacji dla każdego gatunku",
+      digits = 2, longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0") %>%
+  row_spec(nrow(metrics_b) - 1, hline_after = TRUE)
+```
+
+Na Wykresie 2. przedstawiono wartości predykcyjne dla każdej obserwacji. Podobnie widać że nie występuje maskowanie klas, jednakże można zauważyć, podobne wartości prognozy dla obserwacji z klasy `versicolor` oraz `virginica`.
+
+```{r, fig.cap="Wartości predykcyjne dla każdej obserwacji"}
+
+Y.hat <- rbind(Y.hat.train, Y.hat.test)
+Y.hat <- Y.hat[order(as.numeric(rownames(Y.hat))), ]
+
+colnames(Y.hat) <- c("setosa", "versicolor", "virginica")
+
+df_long <- melt(Y.hat)
+colnames(df_long) <- c("id", "species", "value")
+df_long$id <- as.numeric(as.character(df_long$id))
+
+ggplot(df_long, aes(x = id, y = value, color = species, group = species)) +
+  geom_point(size = 2, shape = 8) +
+  geom_vline(xintercept = c(50, 100), linetype = "dashed", color = "gray") +
+  labs(x = "Numer obserwacji",
+       y = "Wartość prognozy",
+       color = "Gatunek") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+Średnia dokładność dla każdego gatunku wynosi `r round(metrics_b[4,1] * 100, 0)`%, a F1-score `r round(metrics_b[4,4] * 100, 0)`%. Jest to wartość mniejsza niż na zbiorze treningowym, lecz nadal wysoka, co wskazuje na dobrą zdolność modelu do generalizacji na nowych danych.
+
+## Budowa klasyfikatora w rozszerzonej przestrzeni cech
+
+W tej części stworzono klasyfikator oparty na modelu regresji liniowej w rozszerzonej przestrzeni cech, uzyskanej poprzez tworzenie iloczynów par zmiennych.
+
+```{r echo=TRUE, cache=TRUE}
+iris1 <- iris
+
+names(iris1) <- c("SL","SW","PL","PW","Species")
+
+cechy <- names(iris1)[1:4]
+
+grid <- expand.grid(cechy, cechy, stringsAsFactors = FALSE)
+pairs <- grid[ grid$Var1 <= grid$Var2, ]
+
+for (k in seq_len(nrow(pairs))) {
+  i <- pairs$Var1[k]
+  j <- pairs$Var2[k]
+  nazwa <- paste(i, j, sep = ".")
+  iris1[[nazwa]] <- iris1[[i]] * iris1[[j]]
+}
+```
+
+Do trenowania i testowania modelu wykorzystano zbiory danych utworzone we wcześniejszym etapie poprzez podział w stosunku 2:1.
+
+```{r echo=TRUE, cache=TRUE}
+train <- iris1[idx_train, ]
+test  <- iris1[-idx_train, ]
+
+etykiety <- train$Species
+train_cechy <- train[, -5]
+N <- nrow(train_cechy)
+K <- length(unique(etykiety))
+
+X.train <- as.matrix(cbind(rep(1, N), train_cechy))
+
+Y.train <- matrix(0, nrow=N, ncol=K)
+etykiety.num <- as.numeric(etykiety)
+
+for (k in 1:K) {
+  Y.train[etykiety.num==k, k] <- 1
+}
+
+B.hat <- solve(t(X.train)%*%X.train) %*% t(X.train) %*% Y.train
+```
+
+W Tabeli 7. zestawiono wartości współczynników regresji liniowej przypisanych poszczególnym cechom dla kategorii klasyfikacyjnych w zbiorze danych, uwzględniając rozszerzoną przestrzeń cech.
+
+```{r, cache=TRUE}
+rownames(B.hat)[1] <- "1"
+
+kable(B.hat, digits = 3,
+      col.names = c(" ", "Setosa", "Versicolor", "Virginica"),
+      caption = "Wartości współczynników regresji liniowej dla poszczególnych cech i kategorii - przestrzeń rozszerzona") %>%
+  add_header_above(c("Kombinacja Cech" = 1, "Gatunki" = 3)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+## Ewaluacja jakości modelu
+
+W tej części dokonano ewaluacji jakości stworzonego modelu regresji liniowej.
+
+Ewaluacja modelu na zbiorze treningowym.
+ 
+```{r echo=TRUE, cache=TRUE}
+### Treningowy
+Y.hat.train <- X.train %*% B.hat
+pred_train <- apply(Y.hat.train, 1, which.max)
+
+conf.matrix <- table(pred_train, train$Species)
+
+accuracy_c <- sum(diag(conf.matrix))/sum(conf.matrix)
+```
+
+Wyniki klasyfikacji na zbiorze treningowym przedstawiono w macierzy pomyłek zawartej w Tabeli 8.
+
+```{r, cache=TRUE}
+rownames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+colnames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+
+kable(conf.matrix,
+      col.names = c("Prawdziwy gatunek", "setosa", "versicolor", "virginica"),
+      caption = "Macierz pomyłek - zbiór treningowy") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+```
+
+Tym razem błąd klasyfikacyjny na zbiorze treningowym wynosi jedynie `r round(100 - 100 * accuracy_c, 2)`%. Jest to bardzo dobry wynik, świadczący o wysokiej skuteczności modelu. Nic nie wskazuje na maskowanie klas.
+
+```{r, cache=TRUE}
+metrics_c <- metryki(conf.matrix)
+kable(metrics_c,
+      col.names = c("Prawdziwy gatunek", "Dokładność", 
+                    "Precyzja", "Czułośc", "F1-score"),
+      caption = "Metryki klasyfikacji dla każdego gatunku",
+      digits = 2, longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0") %>%
+  row_spec(nrow(metrics_c) - 1, hline_after = TRUE)
+```
+
+Średnia dokładność dla każdego gatunku wynosi `r round(metrics_c[4,1] * 100, 0)`%, a F1-score `r round(metrics_c[4,4] * 100, 0)`%. Są to znakomite wyniki, świadczące o bardzo wysokiej skuteczności klasyfikatora w rozróżnianiu poszczególnych klas.
+
+Ewaluzacja modelu na zbiorze testowym.
+
+```{r echo=TRUE, cache=TRUE}
+### Testowy
+test_cechy <- test[, -5]
+N <- nrow(test_cechy)
+
+X.test <- as.matrix(cbind(rep(1, N), test_cechy))
+
+Y.hat.test <- X.test %*% B.hat
+pred_test <- apply(Y.hat.test, 1, which.max)
+
+conf.matrix <- table(pred_test, test$Species)
+
+accuracy_d <- sum(diag(conf.matrix))/sum(conf.matrix)
+```
+
+```{r, cache=TRUE}
+rownames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+colnames(conf.matrix) <- c("setosa", "versicolor", "virginica")
+
+kable(conf.matrix,
+      col.names = c("Prawdziwy gatunek", "setosa", "versicolor", "virginica"),
+      caption = "Macierz pomyłek - zbiór testowy") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+```
+
+Tym razem błąd klasyfikacyjny na zbiorze treningowym wynosi jedynie `r round(100 - 100 * accuracy_d, 2)`%. Nic nie wskazuje na maskowanie klas.
+
+Na Wykresie 3. przedstawiono wartości predykcyjne dla każdej obserwacji w przestrzeni rozszerzoenj. Podobnie widać że nie występuje maskowanie klas, jednak teraz wyraźniej widać jak dobrze model rozdziela klase.
+
+``` {r, fig.cap="Wartości predykcyjne dla każdej obserwacji - przestrzeń rozszerzona"}
+Y.hat <- rbind(Y.hat.train, Y.hat.test)
+Y.hat <- Y.hat[order(as.numeric(rownames(Y.hat))), ]
+
+colnames(Y.hat) <- c("setosa", "versicolor", "virginica")
+
+df_long <- melt(Y.hat)
+colnames(df_long) <- c("id", "species", "value")
+df_long$id <- as.numeric(as.character(df_long$id))
+
+ggplot(df_long, aes(x = id, y = value, color = species, group = species)) +
+  geom_point(size = 2, shape = 8) +
+  geom_vline(xintercept = c(50, 100), linetype = "dashed", color = "gray") +
+  labs(x = "Numer obserwacji",
+       y = "Wartość prognozy",
+       color = "Gatunek") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r, cache=TRUE}
+metrics_d <- metryki(conf.matrix)
+kable(metrics_d,
+      col.names = c("Prawdziwy gatunek", "Dokładność", 
+                    "Precyzja", "Czułośc", "F1-score"),
+      caption = "Metryki klasyfikacji dla każdego gatunku - przestrzeń rozszerzona",
+      digits = 2, longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0") %>%
+  row_spec(nrow(metrics_d) - 1, hline_after = TRUE)
+```
+
+Średnia dokładność dla każdego gatunku wynosi `r round(metrics_d[4,1] * 100, 0)`%, a F1-score `r round(metrics_d[4,4] * 100, 0)`%. Wyniki te są lepsze niż w przypadku klasyfikacji bez zastosowania rozszerzonej przestrzeni cech.
+
+Przedstawiono macierz pomyłek w formie wykresu słupkowego, aby umożliwić przejrzystą wizualizację zdolności klasyfikacyjnej modelu oraz lepsze zobrazowanie rozkładu poprawnych i błędnych predykcji dla poszczególnych klas.
+
+Wyniki przewidywać przedstawiono na Wykresie 4.
+
+```{r fig.cap="Porównanie przewidywanych i rzeczywistych klas", cache=TRUE}
+conf.matrix_long <- data.frame(conf.matrix)
+
+conf.matrix_long <- conf.matrix_long %>%
+  group_by(pred_test) %>%
+  mutate(Freq = Freq / sum(Freq))
+
+ggplot(conf.matrix_long, aes(x = factor(pred_test), y = Freq, fill = Var2)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Przewidywany gatunek", y = "Częstość", 
+       fill = "Rzeczywisty Gatunek") +
+  scale_x_discrete(labels = c("setosa", "versicolor", "virginica")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+## Podsumowanie
+
+Regresja liniowa pozwoliła nam na modelowanie zależności między zmiennymi oraz przypisanie obserwacjom wartości wyjściowych, które można interpretować jako **przybliżone prawdopodobieństwo przynależności do klasy**.
+
+Mimo że do trenowania modelu używaliśmy etykiet binarnych (100% lub 0% przynależności do danej klasy), przewidywane przez model wyniki mogą przyjmować wartości spoza przedziału $[0,1]$ oraz nie sumują się do 1, przez co nie można ich interpretować bezpośrednio jako prawdopodobieństw. W celu uzyskania poprawnej interpretacji probabilistycznej, stosuje się funkcję **softmax**, która przekształca wyjścia modelu na prawdopodobieństwa przypisania do poszczególnych klas.
+
+W Tabeli 12. przedstawiono zmiany najważniejszych miar klasyfikacji po zastosowaniu rozszerzonej przestrzeni cech.
+
+``` {r, cache=TRUE}
+dane <- data.frame(
+  Wiersz = c("Błąd klasyfikacyjny", "Średnia dokładność", "Średni F1 - score"),
+  `Przestrzeń podstawowa` = c(100 - 100 * accuracy_a, metrics_a[4,1] * 100, metrics_a[4,4] * 100),
+  `Przestrzeń rozszerzona` = c(100 - 100 * accuracy_c, metrics_c[4,1] * 100, metrics_c[4,4] * 100),
+  `Przestrzeń podstawowa.1` = c(100 - 100 * accuracy_b, metrics_b[4,1] * 100, metrics_b[4,4] * 100),
+  `Przestrzeń rozszerzona.1` = c(100 - 100 * accuracy_d, metrics_d[4,1] * 100, metrics_d[4,4] * 100))
+
+kable(dane,
+  caption = "Podsumowanie metryk klasyfikacji w różnych przestrzeniach i zbiorach",
+  digits = 2,
+  col.names = NULL) %>%
+  add_header_above(c(" " = 1, 
+                     "Przestrzeń \n podstawowa" = 1, 
+                     "Przestrzeń \n rozszerzona" = 1, 
+                     "Przestrzeń \n podstawowa" = 1, 
+                     "Przestrzeń \n rozszerzona" = 1)) %>%
+  add_header_above(c(" " = 1, "Zbiór treningowy" = 2, "Zbiór testowy" = 2)) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Dzięki wprowadzeniu rozszerzonych cech wszystkie miary jakości klasyfikacji uległy wyraźnej poprawie.
+
+# Porównanie metod klasyfikacji
+
+W tej części dokonamy porównania wybranych metod klasyfikacyjnych: k-NN, drzew decyzyjnych oraz naiwnego klasyfikatora bayesowskiego, analizując ich skuteczność przy różnych konfiguracjach parametrów. Oceny modeli dokonamy na podstawie miar takich jak dokładność oraz F1-score, stosując techniki wielokrotnego podziału na zbiór treningowy i testowy, cross-validation oraz bootstrap.
+
+## Charaktetystyka danych
+
+Zbiór danych *wine* zawiera **`r nrow(wine)`** przypadków trzech rodzajów włoskich win oraz **`r ncol(wine)`** cech. Liczba brakujących danych wynosi **`r sum(is.na(wine))`**.
+
+Znaczenie poszczególnych cech oraz ich typ przedstawiono w tabeli 13.
+
+```{r, cache=TRUE}
+colnames(wine) <- c(
+  "Gatunek", "Alkohol", "Kwas_mlekowy", "Popiół", "Zasadowość_popiołu", 
+  "Magnez", "Fenole_ogółem", "Flawonoidy", 
+  "Fenole_nieflawonoidowe", "Proantocyjanidyny",
+  "Koloru", "Barwa", "OD280_OD315", "Prolina"
+)
+wine$Gatunek <- as.factor(wine$Gatunek)
+wine$Magnez <- as.numeric(wine$Magnez)
+wine$Prolina <- as.numeric(wine$Prolina)
+```
+
+```{r, cache=TRUE}
+df_table <- data.frame(
+  Typ = sapply(wine, class),
+  Opis = c(
+    "Klasa (typ wina: 1, 2, 3)",
+    "Zawartość alkoholu [%]",
+    "Kwas jabłkowy [g/l]",
+    "Zawartość popiołu [g/l]",
+    "Zasadowość pozostałości popiołu",
+    "Zawartość magnezu [mg/l]",
+    "Fenole ogółem [g/l]",
+    "Zawartość flawonoidów [g/l]",
+    "Fenole niefalwonoidowe [g/l]",
+    "Proantocyjanidyny [g/l]",
+    "Intensywność koloru",
+    "Odcień barwy",
+    "Stosunek absorbancji przy 280/315 nm dla rozcieńczonych win",
+    "Zawartość proliny [mg/l]"
+  )
+)
+
+kable(df_table,
+      col.names = c("Zmienna", "Typ", "Opis"),
+      caption = "Opis zmiennych w zbiorze danych wine") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+```
+
+``` {r fig.cap ="Liczba występowania gatunków win w zbiorze wine", cache=TRUE}
+etykiety <- wine$Gatunek
+
+K <- length(unique(etykiety))
+n <- length(etykiety)
+p <- length(wine) - 1
+
+ggplot(data.frame(etykiety), aes(x = etykiety, fill = etykiety)) +
+  geom_bar() +
+  labs(x = "Gatunek wina", y = "Liczba wystąpień") +
+  scale_fill_manual(values = c("tomato", "darkgreen", "steelblue")) + 
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Z Wykresu 5. można odczytać, że liczba obserwacji poszczególnych klas w zbiorze danych jest zróżnicowana. Najwięcej jest win z gatunku drugiego, a najmniej z gatunku trzeciego.
+
+Gdybyśmy przypisali wszystkie obserwacje do najczęściej występującej klasy, uzyskalibyśmy dokładność na poziomie `r round(100 * max(table(etykiety)) / sum(table(etykiety)), 2)`%.
+
+Na Wykresie 6. przedstawiono rozkłady zmiennych ilościowych z podziałem na gatunek. W zbiorze danych nie występuje zmienna, która jednoznacznie pozwalałaby na rozróżnienie klas, jednak wstępna analiza sugeruje, że zmienna `Flawonoidy` cechuje się dobrą zdolnością dyskryminacyjną. Szczegółowy wybór najlepszych cech klasyfikacyjnych zostanie omówiony w dalszej części raportu.
+
+``` {r dojebane-wykresy, fig.cap="Rozkłady zmiennych ilościowych z podziałem na gatunek", fig.height = 9, cache=TRUE}
+zmienne <- names(wine)[-1]
+
+plots <- list()
+for (v in zmienne) {
+  p <- ggplot(wine, aes_string(x = "Gatunek", y = v, fill = "Gatunek")) +
+    geom_violin(trim = FALSE, width = 1.0) +
+    geom_boxplot(width = 0.2, outlier.size = 1, alpha = 0.7, color = "black") +
+    labs(title = v,
+         x = "Gatunek", y = "Wartość") +
+    theme_minimal() +
+    theme(legend.position = "none")
+  plots[[v]] <- p
+}
+
+grid.arrange(grobs = plots, ncol = 3)
+```
+
+```{r fig.cap="Wykresy pudełkowe zmiennych numerycznych", cache=TRUE}
+wine_num <- wine[, sapply(wine, is.numeric)][-1]
+
+old_mar <- par("mar")
+par(mar = c(5, 10, 4, 2))
+boxplot(wine_num, las = 1, col = "tomato", horizontal = TRUE)
+par(mar = old_mar)
+```
+
+Z Wykresu 7. można odczytać, że zmienne Magnez i Prolina przyjmują znacznie większe wartości w porównaniu do pozostałych cech. Wynika to z ich naturalnego zakresu oraz jednostek miary, co wpływa na różnice w skali danych. W związku z tym, w przypadku metody k-NN, niezbędne będzie zastosowanie odpowiedniej standaryzacji cech.
+
+```{r fig.cap="Wykresy pudełkowe zmiennych numerycznych - bez Magnezu i Proliny", cache=TRUE}
+old_mar <- par("mar")
+par(mar = c(5, 10, 4, 2))
+boxplot(wine_num[-c(4, 12)], las = 1, col = "tomato", horizontal = TRUE)
+par(mar = old_mar)
+```
+
+Po usunięciu tych dwóch cech (Wykres 8) zauważalna jest nadal istotna zmienność wśród pozostałych zmiennych.
+
+## Budowa i ewaluacja klasyfikatorów
+
+W tej części zajęto się konstrukcją oraz oceną skuteczności wybranych modeli klasyfikacyjnych. Ze względu na charakterystykę działania klasyfikatora rozważano różne liczby sąsiadów, odmienne proporcje podziału danych na zbiory treningowe i testowe oraz wykorzystanie jedynie wybranych zmiennych wejściowych. Ponadto omówiono potrzebę standaryzacji danych
+
+\newpage
+
+### Klasyfikator k-NN
+
+W przypadku klasyfikatora k-NN istotną rolę odgrywa sposób obliczania odległości pomiędzy punktami, dlatego należy rozważyć konieczność przeprowadzenia standaryzacji zmiennych.
+
+#### Najlepsza standaryzacja
+
+W celu wyboru względnie najlepszego wariantu klasyfikacji przeprowadzimy ocenę zdolności klasyfikacyjnych modelu, dzieląc dane na zbiór uczący i testowy w stosunku 2:1 oraz przyjmując liczbę sąsiadów równą 5, a w przypadku metody cross-validation zbiór podzielono na 10 cześci. Walidacji dokonano jedynie na **zbiorze testowym**.
+
+Standaryzację przeprowadzimy, testując różne warianty przekształceń danych:
+
+Ze względu na parametr lokalizacji:
+
+* brak standaryzacji,
+* odjęcie średniej,
+* odjęcie mediany,
+* odjęcie wartości minimalnej.
+
+Ze względu na parametr rozproszenia:
+
+* brak standaryzacji,
+* podzielenie przez odchylenie standardowe,
+* podzielenie przez rozstęp,
+* podzielenie przez rozstęp międzykwartylowy.
+
+```{r skalowanie, echo=TRUE, cache=TRUE}
+scale_plus <- function(data, shift = "none", scale = "none") {
+  scale_columns <- function(x) {
+    if (shift == "mean") x <- x - mean(x)
+    else if (shift == "median") x <- x - median(x)
+    else if (shift == "min") x <- x - min(x)
+    
+    if (scale == "sd") x <- x / sd(x)
+    else if (scale == "range") x <- x / (max(x) - min(x))
+    else if (scale == "iqr") x <- x / IQR(x)
+    
+    return(x)
+  }
+  as.data.frame(lapply(data, scale_columns))
+}
+```
+
+``` {r wielokrotny-podzial1, echo=TRUE, cache=TRUE}
+wielokrotny_podział <- function(data = wine, 
+                                K = 100, 
+                                podzial = 2/3, 
+                                sasiedzi = 5) {
+  # Wielokrotny podział
+  n <- nrow(data)
+
+  sum_acc_train <- 0
+  sum_acc_test <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test <- NULL
+
+  for (i in seq_len(K)) {
+    train_idx <- sample(seq_len(n), size = floor(podzial * n))
+    train.set <- data[train_idx, ]
+    test.set <- data[-unique(train_idx), ]
+
+    pred_train <- knn(
+      train = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      test  = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      cl    = train.set$Gatunek,
+      k     = sasiedzi
+    )
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+
+    pred_test <- knn(
+      train = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      test  = test.set[, setdiff(names(test.set), "Gatunek"), drop = FALSE],
+      cl    = train.set$Gatunek,
+      k     = sasiedzi
+    )
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+  }
+
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+
+  return(list(
+    accuracy_train = avg_acc_train,
+    accuracy_test  = avg_acc_test,
+    metrics_train  = avg_metrics_train,
+    metrics_test   = avg_metrics_test
+  ))
+}
+```
+
+```{r echo=TRUE, cache=TRUE}
+
+shifts <- c("none", "mean", "median", "min")
+scales <- c("none", "sd", "range", "iqr")
+
+accuracy_matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(Shift = shifts, Scale = scales))
+
+f1_matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(Shift = shifts, Scale = scales))
+
+for (sh in shifts) {
+  for (sc in scales) {
+    wine_scale <- scale_plus(wine[-1], scale = sc, shift = sh)
+    wine_scale$Gatunek <- wine$Gatunek
+    
+    results <- wielokrotny_podział(wine_scale)
+    
+    avg_accuracy <- results$accuracy_test
+    accuracy_matrix[sh, sc] <- avg_accuracy
+    
+    avg_f1 <- results$metrics_test$F1_Score[4]
+    f1_matrix[sh, sc] <- avg_f1
+  }
+}
+```
+
+W Tabeli 14. przedstawiono średnie wartości dokładności dla różnych kombinacji parametrów rozproszenia i lokalizacji, obliczone metodą wielokrotnego podziału Okazuje się że najlepsze wyniki osiąga standaryzacja minimum i odchyleniem standardowym, lecz podobne wyniki osiągją również kombinacje ze średnią, medianą i rozstępem. Również standaryzacja rozporoszeniem daje lepsze wyniki, niż ta lokalizacją.
+
+```{r, cache=TRUE}
+rownames(accuracy_matrix) <- c("Brak", "Średnia", "Mediana", "Minimum")
+accuracy_matrix <- accuracy_matrix*100
+
+kable(accuracy_matrix,
+  col.names = c(NULL , "Brak", "Odch. standardowe", "Rozstęp", "Rozstęp międzykwartylowy"),
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów rozproszenia i lokalizacji - wielokrotny podział - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Parametr \n lokalizacji" = 1, "Parametr rozproszenia" = 4)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 15. przedstawiono średnie wartości F1-score dla różnych kombinacji parametrów rozproszenia i lokalizacji, obliczone metodą wielokrotnego podziału. Tym razem brak standaryzacji lokalizacją i standaryzacja odchyleniem standardowym przynosi najlepsze wyniki.
+
+```{r, cache=TRUE}
+rownames(f1_matrix) <- c("Brak", "Średnia", "Mediana", "Minimum")
+f1_matrix <- f1_matrix*100
+kable(f1_matrix,
+  col.names = c(NULL , "Brak", "Odch. standardowe", "Rozstęp", "Rozstęp międzykwartylowy"),
+  caption = "Średni F1-score dla kombinacji parametrów rozproszenia i lokalizacji - wielokrotny podział - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Parametr \n lokalizacji" = 1, "Parametr rozproszenia" = 4)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+
+``` {r cross-validation1, echo=TRUE}
+cross_validation <- function(data = wine, K = 10, sasiedzi = 5) {
+  # Cross-validation
+  n <- nrow(data)
+  sum_acc_train <- 0
+  sum_acc_test  <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test  <- NULL
+
+  folds <- sample(rep(seq_len(K), length.out = n))
+
+  for (i in seq_len(K)) {
+    train.set <- data[folds != i, ]
+    test.set  <- data[folds == i, ]
+
+    pred_train <- knn(
+      train = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      test  = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      cl    = train.set$Gatunek,
+      k     = sasiedzi
+    )
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+
+    pred_test <- knn(
+      train = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      test  = test.set[, setdiff(names(test.set), "Gatunek"), drop = FALSE],
+      cl    = train.set$Gatunek,
+      k     = sasiedzi
+    )
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test  <- sum_acc_test  + acc_test
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test  <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test  <- sum_metrics_test  + metrics_test
+    }
+  }
+
+  avg_acc_train    <- sum_acc_train / K
+  avg_acc_test     <- sum_acc_test  / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test  <- sum_metrics_test  / K
+
+  return(list(
+    accuracy_train = avg_acc_train,
+    accuracy_test  = avg_acc_test,
+    metrics_train  = avg_metrics_train,
+    metrics_test   = avg_metrics_test
+  ))
+}
+```
+
+```{r, cache=TRUE}
+shifts <- c("none", "mean", "median", "min")
+scales <- c("none", "sd", "range", "iqr")
+
+accuracy_matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(Shift = shifts, Scale = scales))
+
+f1_matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(Shift = shifts, Scale = scales))
+
+for (sh in shifts) {
+  for (sc in scales) {
+    wine_scale <- scale_plus(wine[-1], scale = sc, shift = sh)
+    wine_scale$Gatunek <- wine$Gatunek
+    
+    results <- cross_validation(wine_scale)
+    
+    avg_accuracy <- results$accuracy_test
+    accuracy_matrix[sh, sc] <- avg_accuracy
+    
+    avg_f1 <- results$metrics_test$F1_Score[4]
+    f1_matrix[sh, sc] <- avg_f1
+  }
+}
+```
+
+W Tabeli 16. przedstawiono średnie wartości dokładności dla różnych kombinacji parametrów rozproszenia i lokalizacji, obliczone metodą cross-validation. Analiza wykazała, że najlepsze wyniki uzyskuje standaryzacja oparta na minimum oraz odchyleniu standardowemu.
+
+```{r, cache=TRUE}
+rownames(accuracy_matrix) <- c("Brak", "Średnia", "Mediana", "Minimum")
+accuracy_matrix <- accuracy_matrix*100
+
+kable(accuracy_matrix,
+  col.names = c(NULL , "Brak", "Odch. standardowe", "Rozstęp", "Rozstęp międzykwartylowy"),
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów rozproszenia i lokalizacji - cross-validation - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Parametr \n lokalizacji" = 1, "Parametr rozproszenia" = 4)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 17. przedstawiono średnie wartości F1-score dla różnych kombinacji parametrów rozproszenia i lokalizacji, obliczone metodą cross-validation. Podobnie najlepsze wyniki dla standaryzacji minimum oraz dochyleniem standardowym
+
+```{r, cache=TRUE}
+rownames(f1_matrix) <- c("Brak", "Średnia", "Mediana", "Minimum")
+f1_matrix <- f1_matrix*100
+kable(f1_matrix,
+  col.names = c(NULL , "Brak", "Odch. standardowe", "Rozstęp", "Rozstęp międzykwartylowy"),
+  caption = "Średni F1-score dla kombinacji parametrów rozproszenia i lokalizacji - wielokrotny podział - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Parametr \n lokalizacji" = 1, "Parametr rozproszenia" = 4)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+``` {r bootstrap1, echo=TRUE, cache=TRUE}
+bootstrap <- function(data = wine, K = 100, podzial = 2/3, sasiedzi = 5) {
+  # Bootstrap
+  n <- nrow(data)
+
+  sum_acc_train <- 0
+  sum_acc_test <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test <- NULL
+
+  for (i in seq_len(K)) {
+    train_idx <- sample(seq_len(n), size = floor(podzial * n), replace = TRUE)
+    train.set <- data[train_idx, ]
+    test.set <- data[-unique(train_idx), ]
+
+    pred_train <- knn(
+      train = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      test  = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      cl    = train.set$Gatunek,
+      k     = sasiedzi
+    )
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+
+    pred_test <- knn(
+      train = train.set[, setdiff(names(train.set), "Gatunek"), drop = FALSE],
+      test  = test.set[, setdiff(names(test.set), "Gatunek"), drop = FALSE],
+      cl    = train.set$Gatunek,
+      k     = sasiedzi
+    )
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+  }
+
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+
+  return(list(
+    accuracy_train = avg_acc_train,
+    accuracy_test  = avg_acc_test,
+    metrics_train  = avg_metrics_train,
+    metrics_test   = avg_metrics_test
+  ))
+}
+
+```
+
+```{r, cache=TRUE}
+
+shifts <- c("none", "mean", "median", "min")
+scales <- c("none", "sd", "range", "iqr")
+
+accuracy_matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(Shift = shifts, Scale = scales))
+
+f1_matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(Shift = shifts, Scale = scales))
+
+for (sh in shifts) {
+  for (sc in scales) {
+    wine_scale <- scale_plus(wine[-1], scale = sc, shift = sh)
+    wine_scale$Gatunek <- wine$Gatunek
+    
+    results <- bootstrap(wine_scale)
+    
+    avg_accuracy <- results$accuracy_test
+    accuracy_matrix[sh, sc] <- avg_accuracy
+    
+    avg_f1 <- results$metrics_test$F1_Score[4]
+    f1_matrix[sh, sc] <- avg_f1
+  }
+}
+```
+
+W Tabeli 18. przedstawiono średnie wartości dokładności dla różnych kombinacji parametrów rozproszenia i lokalizacji, obliczone metodą bootstrap. Okazuje się że najlepsze wyniki osiąga tym razem standarzyacja średnią i rozstępem, lecz podobne wyniki osiągją również kombinacje z medianą i odchyleniem standardowym.
+
+```{r, cache=TRUE}
+rownames(accuracy_matrix) <- c("Brak", "Średnia", "Mediana", "Minimum")
+accuracy_matrix <- accuracy_matrix*100
+
+kable(accuracy_matrix,
+  col.names = c(NULL , "Brak", "Odch. standardowe", "Rozstęp", "Rozstęp międzykwartylowy"),
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów rozproszenia i lokalizacji - bootstrap - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Parametr \n lokalizacji" = 1, "Parametr rozproszenia" = 4)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 19. przedstawiono średnie wartości F1-score dla różnych kombinacji parametrów rozproszenia i lokalizacji, obliczone metodą bootstrap. Najlepsze wyniki wystepują dla standaryzacji mediana i odchyleniem standardowym, lecz jest on podobny do innych kombinacji standaryzacji.
+
+```{r, cache=TRUE}
+rownames(f1_matrix) <- c("Brak", "Średnia", "Mediana", "Minimum")
+f1_matrix <- f1_matrix*100
+kable(f1_matrix,
+  col.names = c(NULL , "Brak", "Odch. standardowe", "Rozstęp", "Rozstęp międzykwartylowy"),
+  caption = "Średni F1-score dla kombinacji parametrów rozproszenia i lokalizacji - wielokrotny podział - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Parametr \n lokalizacji" = 1, "Parametr rozproszenia" = 4)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Na podstawie danych przedstawionych w Tabelach 14., 15., 16., 17., 18. i 19. podjęto decyzję, że do dalszej analizy zdolności klasyfikacyjnych metody k-NN zostanie zastosowana standaryzacja oparta na średniej oraz odchyleniu standardowym. Zdaje się jednak sprawę, że zastosowanie rozstępu lub mediany mogłoby potencjalnie przynieść lepsze wyniki, niemniej rozszerzenie analizy o te metody byłoby nieuzasadnione, gdyż prawdopodobnie nie wpłynęłoby znacząco na poprawę efektywności klasyfikacji.
+
+
+```{r}
+wine_scale <- scale_plus(wine[-1], shift = "mean", scale = "sd")
+wine_scale$Gatunek <- wine$Gatunek
+```
+
+#### Najlepszy model
+
+Po dokonaniu standaryzacji przeprowadzono ocenę zdolności klasyfikacyjnej modelu dla różnych proporcji podziału zbioru danych oraz różnych wartości liczby sąsiadów. Wybrano następujące udziały zbioru uczącego: 1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10 oraz 19/20, a także liczby sąsiadów: 1, 2, 3, 4, 5, 10 i 20 dla metody wielokrotnego podziału oraz bootstrap. Dla metody cross-validation zbiór podzielono na 2, 5, 10, 20, 50 i 178 (Leave-One-Out) części.
+
+Na podstawie wyników postarano się wybrać najlepszy sposób podziału. Jako kryterium dobrego wybrano największe wartości średniej dokładności klasyfikacji oraz średniego F1-score.
+
+W pierwszej kolejności dokonano sprawdzenia modelu za pomocą metody wielokrotnego podziału na zbiór uczący i testowy.
+
+```{r, echo = FALSE, cache=TRUE}
+# Wielokrotny
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+sasiedzi = c(1, 2, 3, 4, 5, 10, 20)
+
+accuracy_matrix_train <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(sasiedzi),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(sasiedzi),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+f1_matrix_train <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(sasiedzi),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = as.character(sasiedzi)))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(sasiedzi),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = as.character(sasiedzi)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(sasiedzi)) {
+    podzial <- podzialy[i]
+    sasiad <- sasiedzi[j]
+    
+    results <- wielokrotny_podział(wine_scale, podzial = podzial, sasiedzi = sasiad)
+    
+    accuracy_matrix_train[i, j] <- results$accuracy_train
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_train[i, j] <- results$metrics_train$F1_Score[4]
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+
+```
+
+```{r}
+kable(accuracy_matrix_train * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - wielokrotny podział - zbiór treningowy - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Z Tabeli 20. wynika, że dokładność na zbiorze treningowym maleje wraz ze wzrostem liczby sąsiadów i zmniejszeniem rozmiaru zbioru treningowego. Jest to zgodne z intuicją, gdyż większa liczba sąsiadów uśrednia decyzje modelu, a mniejszy zbiór dostarcza mniej informacji do nauki. Dodatkowo, wzrost liczby sąsiadów zwiększa czas predykcji oraz obciążenie pamięciowe modelu.
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - wielokrotny podział - zbiór testowy - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Z Tabeli 21. wynika, że ogólny trend obserwowany na zbiorze treningowym został zachowany także na zbiorze testowym. Najlepsze wyniki model osiąga przy jednej liczbie sąsiadów oraz przy większym udziale danych przeznaczonych do treningu (podział 19:20), co sugeruje dobrą separowalność klas w przestrzeni cech. Może to również sugerować, że model nie ulega overfittingowi, a wręcz przeciwnie – czerpie korzyść z większej liczby przykładów uczących.
+
+```{r}
+kable(f1_matrix_train * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - wielokrotny podział - zbiór treningowy - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - wielokrotny podział - zbiór testowy - KNN", 
+  digits = 2) %>%
+    add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Dane z Tabeli 22. oraz Tabeli 23. potwierdzają poprzednie obserwacje.
+
+W drugiej kolejności dokonano sprawdzenia modelu za pomocą cross-validation.
+
+``` {r, cache=TRUE}
+# Cross-validation
+podzialy = c(2, 5, 10, 20, 50, 178)
+sasiedzi = c(1, 2, 3, 4, 5, 10, 20)
+
+accuracy_matrix_train <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(sasiedzi),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(sasiedzi),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+f1_matrix_train <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(sasiedzi),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(sasiedzi),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(sasiedzi)) {
+    podzial <- podzialy[i]
+    sasiad <- sasiedzi[j]
+    
+    results <- cross_validation(wine_scale, K = podzial, sasiedzi = sasiad)
+    
+    accuracy_matrix_train[i, j] <- results$accuracy_train
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_train[i, j] <- results$metrics_train$F1_Score[4]
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_train * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów liczby podzbiorów oraz liczby sąsiadów - cross-validation - zbiór treningowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Z Tabeli 24 wynikają podobne wnioski jak z analizy przeprowadzonej metodą wielokrotnego podziału. Warto jednak zauważyć, że porównywalne wyniki uzyskiwane są zarówno przy podziale zbioru na 5 części, jak i przy podziale na 178 części (walidacja Leave-One-Out). Świadczy to o stabilności modelu oraz niewielkiej wrażliwości na sposób podziału danych, co sugeruje dobrą zdolność generalizacji i ograniczoną podatność na nadmierne dopasowanie.
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów liczby podzbiorów oraz liczby sąsiadów - cross-validation - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Z Tabeli 25. wynikają podobne wnioski jak w poprzedniej części sprawozdania. Warto jednak zauważyć, że użycie 3 sąsiadów często przynosi lepsze wyniki niż zastosowanie 2 lub 4 sąsiadów, podobnie jak w przypadku 20 sąsiadów. Mimo to, najlepsze rezultaty uzyskuje się przy zastosowaniu jednego sąsiada.
+
+```{r}
+kable(f1_matrix_train * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - cross-validation - zbiór treningowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Z Tabeli 26. nie wynikają żadne nowe wnioski.
+
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów liczby podzbiorów oraz liczby sąsiadów - cross-validation - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 27. prezentuje zupełnie odmienne wyniki. Średni F1-score zasadniczo spada wraz ze wzrostem liczby podzbiorów oraz liczby sąsiadów. W przypadku większej liczby podziałów, mimo że każdy zbiór treningowy jest niemal pełny (np. w walidacji Leave-One-Out), model jest oceniany na bardzo niewielkich zbiorach testowych, co może powodować większą wariancję wyników i niższą stabilność estymacji skuteczności. Z kolei wzrost liczby sąsiadów prowadzi do silniejszego uśredniania decyzji klasyfikatora, co może skutkować utratą zdolności do wychwycenia lokalnych wzorców, a tym samym spadkiem dokładności.
+
+Jako ostatnią dokonano sprawdzenia modelu za pomocą metody bootstrap.
+
+```{r, cache=TRUE}
+# Bootstrap
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+sasiedzi = c(1, 2, 3, 4, 5, 10, 20)
+
+accuracy_matrix_train <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(sasiedzi),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(sasiedzi),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = as.character(sasiedzi)))
+
+f1_matrix_train <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(sasiedzi),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = as.character(sasiedzi)))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(sasiedzi),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = as.character(sasiedzi)))
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(sasiedzi)) {
+    podzial <- podzialy[i]
+    sasiad <- sasiedzi[j]
+    
+    results <- bootstrap(wine_scale, podzial = podzial, sasiedzi = sasiad)
+    
+    accuracy_matrix_train[i, j] <- results$accuracy_train
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_train[i, j] <- results$metrics_train$F1_Score[4]
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r, cache=TRUE}
+kable(accuracy_matrix_train * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - bootstrap - zbiór treningowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache=TRUE}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - bootstrap - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache=TRUE}
+kable(f1_matrix_train * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - bootstrap - zbiór treningowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache=TRUE}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby sąsiadów - bootstrap - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba sąsiadów" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabele 28, 29, 30 oraz 31, które prezentują wyniki oceny modelu przy użyciu metody bootstrap, potwierdzają podobne wnioski jak te uzyskane metodą wielokrotnego podziału. Zarówno w przypadku bootstrapu, jak i wielokrotnego podziału danych, obserwujemy spójność wyników dotyczących wpływu liczby sąsiadów oraz proporcji podziału zbioru na skuteczność klasyfikacji. Metoda bootstrap, dzięki wielokrotnemu próbkowaniu z zastępowaniem, pozwala dodatkowo ocenić stabilność i wariancję estymatorów modelu, co wzmacnia wiarygodność uzyskanych rezultatów. W efekcie, wyniki obu metod wskazują na podobne zachowanie modelu, co zwiększa pewność co do jego jakości i zdolności do generalizacji.
+
+Podsumowując:
+
+- Dane charakteryzują się wystarczającą różnorodnością i dobrą separowalnością klas, co sprawia, że najlepsze wyniki osiąga model k-NN wykorzystujący jednego sąsiada.
+- Nie zaobserwowano wyraźnych sygnałów świadczących o nadmiernym dopasowaniu modelu na zbiorze treningowym i kiepskim dopasowaniu na zbiorze testowym (overfittingu), co potwierdza stabilność i zdolność generalizacji klasyfikatora.
+
+Autorzy rekomendują, aby przy zastosowaniu metody k-NN do zbioru danych *wine* po standaryzacji wykorzystać pełny zbiór treningowy oraz ustawić parametr liczby sąsiadów na wartość jeden, co zapewnia optymalną skuteczność modelu.
+
+#### Najlepszy model na podstawie najlepszych cech dyskryminujących
+
+Pojawia się jednak istotny problem związany z czasem obliczeń oraz wymaganiami pamięciowymi podczas klasyfikacji nowych obserwacji, wynikający ze złożoności metody k-NN. W związku z tym, podobne analizy jak dla całego zbioru przeprowadzono również na podzbiorze najlepszych cech dyskryminujących, co pozwala na zmniejszenie kosztów obliczeniowych przy zachowaniu skuteczności modelu.
+
+Do wybrania cech o najlepszej zdolności dyskrymijacyjnej posłuży metoda k-średnich.
+
+W Tabeli 32. przedstawiono wyniki zdolności dyskriminacyjnych zmiennych.
+
+```{r, cache=TRUE}
+zmienne <- colnames(wine_scale)[colnames(wine_scale) != "Gatunek"]
+wyniki <- numeric(length(zmienne))
+names(wyniki) <- zmienne
+
+for (zmienna in zmienne) {
+  dyskretyzacja <- discretize(wine_scale[[zmienna]], method = "cluster", breaks = 3)
+  dopasowanie <- compareMatchedClasses(wine_scale$Gatunek, dyskretyzacja)$diag * 100
+  wyniki[zmienna] <- dopasowanie
+}
+
+wyniki_df <- data.frame(Dopasowanie = wyniki)
+wyniki_df <- wyniki_df[order(-wyniki_df$Dopasowanie), , drop = FALSE]
+
+posortowane_zmienne <- rownames(wyniki_df)
+
+kable(wyniki_df, 
+      col.names = c("Zmienna", "Dopasowanie (%)"), 
+      caption = "Skuteczność dyskryminacyjna zmiennych po dyskretyzacji metodą k-średnich", digits = 2) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W poprzedniej części wykazano, że model osiąga najlepsze wyniki przy zastosowaniu jednego sąsiada. Dlatego też parametr ten zostanie przyjęty jako stały. W dalszej analizie zbadano, jak zmienia się skuteczność klasyfikacji w zależności od liczby wykorzystywanych cech (rozpoczynając od tych najlepiej dyskryminujących) oraz od proporcji podziału danych na zbiór treningowy i testowy. Ze względu na fakt, że dla jednego sąsiada model może osiągać niemal idealne wyniki na zbiorze treningowym, w analizie pominięto ocenę jakości klasyfikacji na tym zbiorze.
+
+```{r panie-miej-ten-kod-w-opiece, cache=TRUE}
+# Wielokrotny
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- wielokrotny_podział(wine_scale[zmienne], podzial = podzial, sasiedzi = 1)
+    
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - wielokrotny podział - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+ 
+W Tabeli 33. widać, że już przy 3–4 najbardziej dyskryminujących cechach dokładność klasyfikacji przekracza 90%, a dalsze zwiększanie liczby cech powyżej przynosi jedynie minimalne korzyści. Zwiększenie udziału danych treningowych do około 2/3–9/10 istotnie podnosi skuteczność, przy czym najlepszy wynik otrzymano dla 3 cech i udziału danych treningowych 19/20.
+
+ 
+```{r, cache=TRUE}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - wielokrotny podział - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 34. można zaobserwować przeuczenie modelu. Najlepsze wyniki osiągnięto przy udziale danych treningowych w przedziale od 2/3 do 9/10 oraz przy doborze 7–10 cech, przy czym najwyższą dokładność odnotowano dla 8 cech i podziału danych na 90% treningowych i 10% testowych.
+
+``` {r panie-miej-ten-kod-w-opiece-2, cache=TRUE}
+# Cross-validation
+podzialy = c(2, 5, 10, 20, 50, 178)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- cross_validation(wine_scale[zmienne], K = podzial, sasiedzi = 1)
+    
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r, cache=TRUE}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów liczby podzbiorów oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - cross-validation - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+ 
+W Tabeli 35. widać, że przy zastosowaniu walidacji krzyżowej już od 3–4 najlepiej dyskryminujących cech dokładność klasyfikacji przekracza 95%, a jej wartość jest relatywnie stabilna niezależnie od liczby podziałów. Najwyższą średnią dokładność uzyskano dla 8 cech przy 50-krotnej walidacji. Optymalny zakres konfiguracji to 7–9 cech i co najmniej 20–50 podziałów cross-validation.
+ 
+```{r, cache=TRUE}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów liczby podzbiorów oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - cross-validation - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 36. widać, że najwyższy średni F1-score uzyskano dla 2-krotnej walidacji krzyżowej z wykorzystaniem pięciu najlepiej dyskryminujących zmiennych. Zauważalny spadek miary przy rosnącej liczbie podziałów (50-, 178-fold) wskazuje, że optymalną konfiguracją jest stosowanie umiarkowanej liczby podziałów (2–10) oraz selekcja od trzech do pięciu najsilniej dyskryminujących cech.
+
+
+```{r panie-miej-ten-kod-w-opiece-3, cache=TRUE}
+# Bootstrap
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- bootstrap(wine_scale[zmienne], podzial = podzial, sasiedzi = 1)
+    
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+
+```
+
+```{r, cache=TRUE}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - bootstrap - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+ 
+W Tabeli 37. widać, że już przy trzech najlepiej dyskryminujących cechach dokładność przekracza 85%, a po dodaniu czwartej–piątej cechy zbliża się do 94%. Najwyższe wartości uzyskano dla podziałów bootstrapowych z udziałem 4/5–9/10 danych treningowych i 8–9 cechami. Dalsze zwiększanie liczby cech powyżej 9 oraz udziału danych treningowych ponad 90% przynosi jedynie marginalne korzyści. Optymalną konfiguracją jest więc wykorzystanie około 8–9 kluczowych zmiennych przy zastosowaniu bootstrapu z próbkowaniem rzędu 9/10 na dane treningowe.
+ 
+```{r, cache=TRUE}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - bootstrap - zbiór testowy - KNN", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 38. widać, że już przy trzech najlepiej dyskryminujących cechach średni F1-score przekracza 83 %, a przy czterech–pięciu cechach zbliża się do 94–95 %. Najwyższe wartości osiągnięto dla udziału danych treningowych w przedziale 4/5–9/10 oraz przy wykorzystaniu 8 cech, co wskazuje na optymalność tej konfiguracji. Dalsze zwiększanie liczby cech powyżej 9 czy udziału bootstrapowego powyżej 90 % nie przynosi istotnych korzyści.
+
+Podsumowując:
+
+- Dla tradycyjnego podziału optymalny udział danych treningowych wynosi około 80–90% (podziały 4/5–9/10), przy czym najlepsze rezultaty osiąga się, wykorzystując 8 najlepiej dyskryminujących zmiennych.
+- W przypadku walidacji krzyżowej (cross-validation) wystarczy stosować umiarkowaną liczbę podziałów (2–5 foldów) oraz wybór około 5 najsilniej dyskryminujących cech.
+
+Autorzy stwierdzili, że optymalny model uzyskuje się, stosując klasyfikator k-NN z jednym sąsiadem, wykorzystując maksymalny możliwy udział danych w zbiorze treningowym oraz **osiem** najlepiej dyskryminujących cech, co zapewnia odpowiedni kompromis między rozmiarem modelu (przechowującego wszystkie dane) a jego zdolnością klasyfikacyjną.
+
+```{r}
+wine_ultimate <- wine_scale[c(podzbiory_zmienne[[8]], "Gatunek")]
+
+train_idx <- sample(seq_len(n), size = floor(9/10 * n))
+train.set <- wine_ultimate[train_idx, ]
+test.set <- wine_ultimate[-unique(train_idx), ]
+
+n <- nrow(wine_ultimate)
+train_idx <- sample(seq_len(n), size = floor(0.9 * n))
+test_idx  <- setdiff(seq_len(n), train_idx)
+
+train.set <- wine_ultimate[train_idx, ]
+test.set  <- wine_ultimate[test_idx, ]
+
+pred_train <- knn(
+  train = train.set[ , setdiff(names(train.set), "Gatunek"), drop = FALSE],
+  test  = train.set[ , setdiff(names(train.set), "Gatunek"), drop = FALSE],
+  cl    = train.set$Gatunek,
+  k     = 1
+)
+
+pred_test <- knn(
+  train = train.set[ , setdiff(names(train.set), "Gatunek"), drop = FALSE],
+  test  = test.set[ , setdiff(names(test.set), "Gatunek"), drop = FALSE],
+  cl    = train.set$Gatunek,
+  k     = 1
+)
+
+conf.matrix.train <- table(
+  Prawdziwa    = train.set$Gatunek,
+  Przewidziana = pred_train
+)
+
+conf.matrix.test <- table(
+  Prawdziwa    = test.set$Gatunek,
+  Przewidziana = pred_test
+)
+
+```
+
+```{r, cache=TRUE}
+rownames(conf.matrix.train) <- c("1", "2", "3")
+colnames(conf.matrix.train) <- c("1", "2", "3")
+
+conf.df <- as.data.frame.matrix(conf.matrix.train)
+conf.df <- cbind("Gatunek" = rownames(conf.df), conf.df)
+
+kable(conf.df,
+      caption = "Macierz pomyłek — zbiór treningowy — KNN",
+      align = "c") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+```
+
+W Tabeli 39. przedstawiono macierz pomyłek dla wyżej przedstawionego modelu przy udziale danych treningowych 9/10.
+
+```{r, cache=TRUE}
+metrics_a <- metryki(conf.matrix.train)
+kable(metrics_a,
+      col.names = c("Prawdziwy gatunek", "Dokładność", 
+                    "Precyzja", "Czułośc", "F1-score"),
+      caption = "Metryki klasyfikacji dla każdego gatunku - zbiór treningowy - KNN",
+      digits = 2, longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0") %>%
+  row_spec(nrow(metrics_a) - 1, hline_after = TRUE)
+```
+
+Średnia dokładność dla każdego gatunku wynosi `r round(metrics_a[4,1] * 100, 0)`%, a F1-score `r round(metrics_a[4,4] * 100, 0)`%. Są to znakomite wyniki, świadczące o bardzo wysokiej skuteczności klasyfikatora w rozróżnianiu poszczególnych klas.
+
+```{r, cache=TRUE}
+rownames(conf.matrix.test) <- c("1", "2", "3")
+colnames(conf.matrix.test) <- c("1", "2", "3")
+
+conf.df <- as.data.frame.matrix(conf.matrix.test)
+conf.df <- cbind("Gatunek" = rownames(conf.df), conf.df)
+
+kable(conf.df,
+      caption = "Macierz pomyłek — zbiór testowy — KNN",
+      align = "c") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 31. przedstawiono macierz pomyłek modelu dla zbioru testowego.
+
+
+```{r, cache=TRUE}
+metrics_a <- metryki(conf.matrix.test)
+kable(metrics_a,
+      col.names = c("Prawdziwy gatunek", "Dokładność", 
+                    "Precyzja", "Czułośc", "F1-score"),
+      caption = "Metryki klasyfikacji dla każdego gatunku - zbiór testowy - KNN",
+      digits = 2, longtable = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0") %>%
+  row_spec(nrow(metrics_a) - 1, hline_after = TRUE)
+```
+
+Średnia dokładność dla każdego gatunku wynosi `r round(metrics_a[4,1] * 100, 0)`%, a F1-score `r round(metrics_a[4,4] * 100, 0)`%. Są to znakomite wyniki, świadczące o bardzo wysokiej skuteczności klasyfikatora w rozróżnianiu poszczególnych klas. Są to fenomenalne wyniki.
+
+```{r fig.cap="Porównanie przewidywanych i rzeczywistych klas - KNN"}
+conf.matrix_long <- as.data.frame(conf.matrix.test)
+colnames(conf.matrix_long) <- c("Rzeczywisty", "Przewidywany", "Freq")
+
+conf.matrix_long <- conf.matrix_long %>%
+  group_by(Przewidywany) %>%
+  mutate(Freq = Freq / sum(Freq))
+
+ggplot(conf.matrix_long, aes(x = factor(Przewidywany), y = Freq, fill = Rzeczywisty)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Przewidywany gatunek", y = "Częstość", fill = "Rzeczywisty gatunek") +
+  scale_x_discrete(labels = c("1", "2", "3")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+Na Wykresie 9. graficznie widać jak dobrze model sobie radzi.
+
+Trzeba jednak pamiętać, że model zajmuje `r format(object.size(train.set), units = "auto")`, czyli tyle co zbiór treningowy.
+
+### Drzewa klasyfikacyjne
+
+W tej części zajmiemy się porównaniem wyników uzyskiwanych poprzez nieobcięte drzewa, oraz ich optymalnie przycięte odpowiedniki. Następnie najlepsze drzewo zostanie zbadane pod kątem ilości najlepszych cech dyskryminujących, które pozwolą na maksymalizację dokładności oraz wskaźnika F1.
+
+#### Obcięte VS nieobcięte drzewo
+
+W celu ustalenia, czy warto obcinać drzewo klasyfikacyjne, aby zwiększyć optymalizację kosztem dokładności, porównamy wyniki dla obu rodzajów. Dane podzielono na zbiór treningowy i testowy w skali 2:1, a w przypadku metody cross-validation zbiór podzielono na 10 części. Ustalono również dwa wymienione parametry:
+
+* *cp* = 0.01 - parametr złożoności, który określa minimalną poprawę (zmniejszenie błędu) wymaganą, aby wykonać podział w drzewie,
+* *minsplit* = 5 - minimalna liczba obserwacji, które muszą znajdować się w węźle, aby możliwe było jego dalsze dzielenie.
+
+``` {r wielokrotny-podzial2, cache=TRUE, echo=TRUE}
+wielokrotny_podział <- function(data = wine, K = 100, podzial = 2/3,
+                                cp = 0.01, minsplit = 5) {
+  # Wielokrotny podział
+  n <- nrow(data)
+
+  sum_acc_train <- 0
+  sum_acc_test <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test <- NULL
+
+  sum_acc_train.pruned <- 0
+  sum_acc_test.pruned <- 0
+  sum_metrics_train.pruned <- NULL
+  sum_metrics_test.pruned <- NULL
+  
+  for (i in seq_len(K)) {
+    train_idx <- sample(seq_len(n), size = floor(podzial * n))
+    train.set <- data[train_idx, ]
+    test.set <- data[-unique(train_idx), ]
+    
+    wine.tree <- rpart(Gatunek ~ .,
+                       data = train.set,
+                       method = "class",
+                       control = rpart.control(cp = cp, minsplit = minsplit))
+    
+    #Przycinanie drzewa
+    frame <- printcp(wine.tree)
+    SE <- frame[nrow(frame), 4] + frame[nrow(frame), 5]
+    
+    index <- min(which(frame[, 4] < SE))
+    if(index == Inf) index <- nrow(frame)
+    
+    cp.optimal <- frame[index, 1]
+    wine.tree.pruned <- prune(wine.tree, cp = cp.optimal)
+    
+    
+    
+    #Nieprzycięte drzewo
+    pred_train <- predict(wine.tree, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(wine.tree, newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+    
+    
+    
+    #Przycięte drzewo
+    pred_train <- predict(wine.tree.pruned, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek,Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(wine.tree.pruned,newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek,Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train.pruned <- sum_acc_train.pruned + acc_train
+    sum_acc_test.pruned <- sum_acc_test.pruned + acc_test
+
+    if (is.null(sum_metrics_train.pruned)) {
+      sum_metrics_train.pruned <- metrics_train
+      sum_metrics_test.pruned <- metrics_test
+    } else {
+      sum_metrics_train.pruned <- sum_metrics_train.pruned + metrics_train
+      sum_metrics_test.pruned <- sum_metrics_test.pruned + metrics_test
+    }
+  }
+  
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+  
+  avg_acc_train.pruned <- sum_acc_train.pruned / K
+  avg_acc_test.pruned <- sum_acc_test.pruned / K
+  avg_metrics_train.pruned <- sum_metrics_train.pruned / K
+  avg_metrics_test.pruned <- sum_metrics_test.pruned / K
+
+  return(list(
+    list(accuracy_train = avg_acc_train,
+         accuracy_test  = avg_acc_test,
+         metrics_train  = avg_metrics_train,
+         metrics_test   = avg_metrics_test),
+    list(accuracy_train.pruned = avg_acc_train.pruned,
+         accuracy_test.pruned  = avg_acc_test.pruned,
+         metrics_train.pruned  = avg_metrics_train.pruned,
+         metrics_test.pruned   = avg_metrics_test.pruned)
+  ))
+}
+```
+
+``` {r cross-validation2, cache=TRUE, echo=TRUE}
+cross_validation <- function(data = wine, K = 10,
+                             cp = 0.01, minsplit = 5) {
+  # Cross-validation
+  n <- nrow(data)
+  sum_acc_train <- 0
+  sum_acc_test  <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test  <- NULL
+  
+  sum_acc_train.pruned <- 0
+  sum_acc_test.pruned <- 0
+  sum_metrics_train.pruned <- NULL
+  sum_metrics_test.pruned <- NULL
+  
+  folds <- sample(rep(seq_len(K), length.out = n))
+
+  for (i in seq_len(K)) {
+    train.set <- data[folds != i, ]
+    test.set  <- data[folds == i, ]
+
+    wine.tree <- rpart(Gatunek ~ .,
+                       data = train.set,
+                       method = "class",
+                       control = rpart.control(cp = cp, minsplit = minsplit))
+  
+    frame <- printcp(wine.tree)
+    SE <- frame[nrow(frame), 4] + frame[nrow(frame), 5]
+    
+    index <- min(which(frame[, 4] < SE))
+    if(index == Inf) index <- nrow(frame)
+    
+    cp.optimal <- frame[index, 1]
+    wine.tree.pruned <- prune(wine.tree, cp = cp.optimal)
+    
+    #Nieprzycięte drzewo
+    pred_train <- predict(wine.tree, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(wine.tree, newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+    
+    
+    
+    #Przycięte drzewo
+    pred_train <- predict(wine.tree.pruned, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek,Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(wine.tree.pruned,newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek,Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train.pruned <- sum_acc_train.pruned + acc_train
+    sum_acc_test.pruned <- sum_acc_test.pruned + acc_test
+
+    if (is.null(sum_metrics_train.pruned)) {
+      sum_metrics_train.pruned <- metrics_train
+      sum_metrics_test.pruned <- metrics_test
+    } else {
+      sum_metrics_train.pruned <- sum_metrics_train.pruned + metrics_train
+      sum_metrics_test.pruned <- sum_metrics_test.pruned + metrics_test
+    }
+  }
+  
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+  
+  avg_acc_train.pruned <- sum_acc_train.pruned / K
+  avg_acc_test.pruned <- sum_acc_test.pruned / K
+  avg_metrics_train.pruned <- sum_metrics_train.pruned / K
+  avg_metrics_test.pruned <- sum_metrics_test.pruned / K
+
+  return(list(
+    list(accuracy_train = avg_acc_train,
+         accuracy_test  = avg_acc_test,
+         metrics_train  = avg_metrics_train,
+         metrics_test   = avg_metrics_test),
+    list(accuracy_train.pruned = avg_acc_train.pruned,
+         accuracy_test.pruned  = avg_acc_test.pruned,
+         metrics_train.pruned  = avg_metrics_train.pruned,
+         metrics_test.pruned   = avg_metrics_test.pruned)
+  ))
+}
+```
+
+``` {r bootstrap2, cache=TRUE, echo=TRUE}
+bootstrap <- function(data = wine, K = 100, podzial = 2/3,
+                      cp = 0.01, minsplit = 5) {
+  # Bootstrap
+  n <- nrow(data)
+
+  sum_acc_train <- 0
+  sum_acc_test <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test <- NULL
+  
+  sum_acc_train.pruned <- 0
+  sum_acc_test.pruned <- 0
+  sum_metrics_train.pruned <- NULL
+  sum_metrics_test.pruned <- NULL
+  
+  for (i in seq_len(K)) {
+    train_idx <- sample(seq_len(n), size = floor(podzial * n), replace = TRUE)
+    train.set <- data[train_idx, ]
+    test.set <- data[-unique(train_idx), ]
+
+    wine.tree <- rpart(Gatunek ~ .,
+                       data = train.set,
+                       method = "class",
+                       control = rpart.control(cp = cp, minsplit = minsplit))
+  
+    frame <- printcp(wine.tree)
+    SE <- frame[nrow(frame), 4] + frame[nrow(frame), 5]
+    
+    index <- min(which(frame[, 4] < SE))
+    if(index == Inf) index <- nrow(frame)
+    
+    cp.optimal <- frame[index, 1]
+    wine.tree.pruned <- prune(wine.tree, cp = cp.optimal)
+    
+    #Nieprzycięte drzewo
+    pred_train <- predict(wine.tree, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(wine.tree, newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+    
+    
+    
+    #Przycięte drzewo
+    pred_train <- predict(wine.tree.pruned, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek,Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(wine.tree.pruned,newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek,Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train.pruned <- sum_acc_train.pruned + acc_train
+    sum_acc_test.pruned <- sum_acc_test.pruned + acc_test
+
+    if (is.null(sum_metrics_train.pruned)) {
+      sum_metrics_train.pruned <- metrics_train
+      sum_metrics_test.pruned <- metrics_test
+    } else {
+      sum_metrics_train.pruned <- sum_metrics_train.pruned + metrics_train
+      sum_metrics_test.pruned <- sum_metrics_test.pruned + metrics_test
+    }
+  }
+  
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+  
+  avg_acc_train.pruned <- sum_acc_train.pruned / K
+  avg_acc_test.pruned <- sum_acc_test.pruned / K
+  avg_metrics_train.pruned <- sum_metrics_train.pruned / K
+  avg_metrics_test.pruned <- sum_metrics_test.pruned / K
+
+  return(list(
+    list(accuracy_train = avg_acc_train,
+         accuracy_test  = avg_acc_test,
+         metrics_train  = avg_metrics_train,
+         metrics_test   = avg_metrics_test),
+    list(accuracy_train.pruned = avg_acc_train.pruned,
+         accuracy_test.pruned  = avg_acc_test.pruned,
+         metrics_train.pruned  = avg_metrics_train.pruned,
+         metrics_test.pruned   = avg_metrics_test.pruned)
+  ))
+}
+```
+
+```{r, cache=TRUE, include=FALSE}
+metoda <- c("Wielokrotny podział", "Cross-validation", "Bootstrap", "Średnio")
+fun_list <- list(wielokrotny_podział, cross_validation, bootstrap)
+
+matrix <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(c("Dokładność", "Dokładność (pruned)", "F1 score", "F1 score (pruned)"), metoda))
+
+for (i in seq_along(fun_list)) {
+  results <- fun_list[[i]](wine)
+  
+  avg_accuracy <- results[[1]]$accuracy_test
+  matrix[1, i] <- avg_accuracy
+    
+  avg_f1 <- results[[1]]$metrics_test$F1_Score[4]
+  matrix[3, i] <- avg_f1
+  
+  avg_accuracy <- results[[2]]$accuracy_test.pruned
+  matrix[2, i] <- avg_accuracy
+    
+  avg_f1 <- results[[2]]$metrics_test.pruned$F1_Score[4]
+  matrix[4, i] <- avg_f1
+}
+
+matrix[, 4] <- rowMeans(matrix[, 1:3])
+```
+
+W Tabeli 43. przedstawiono średnie wartości dokładności oraz wskaźnika F1, dla drzewa odpowiednio przyciętego lub nieprzyciętego. Jak widać, otrzymane wyniki różnią się w zależności od metody, jednak średnio odpowiednie parametry różnią się o mniej niż 2%, z korzyścią dla bardziej szczegółowego drzewka.
+
+```{r, echo=FALSE}
+kable(matrix*100,
+      caption = "Średnie dokładność klasyfikacji oraz F1-score dla drzew przyciętych oraz nieprzyciętych, z podziałem na metody oceny",
+      digits=2) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+
+```{r, include=FALSE, echo=TRUE}
+podzial <- 2/3
+n <- nrow(wine)
+
+train_idx <- sample(seq_len(n), size = floor(podzial * n))
+train.set <- wine[train_idx, ]
+
+wine.tree <- rpart(Gatunek ~ .,
+                   data = train.set,
+                   method = "class",
+                   control = rpart.control(cp = 0.01, minsplit = 3))
+  
+frame <- printcp(wine.tree)
+SE <- frame[nrow(frame), 4] + frame[nrow(frame), 5]
+    
+index <- min(which(frame[, 4] < SE))
+if(index == Inf) index <- nrow(frame)
+    
+cp.optimal <- frame[index, 1]
+wine.tree.pruned <- prune(wine.tree, cp = cp.optimal)
+```
+
+```{r, fig.cap="Nieprzycięte drzewo klasyfikacyjne"}
+rpart.plot(wine.tree)
+```
+
+```{r, fig.cap="Przycięte drzewo klasyfikacyjne"}
+rpart.plot(wine.tree.pruned)
+```
+
+Na Wykresach 10. oraz 11. znajdują się odpowiednio nieprzycięte oraz przycięte drzewo decyzyjne. Zauważyć można, że uciętych zostało łącznie aż 8 gałęzi. To kosztem mniejszej o ok. 2% dokładności zapewniło nam nie tylko lepszą czytelność drzewa, ale przede wszystkim mniej zużytej pamięci oraz mniejszą złożoność obliczeniową, a co za tym idzie szybszą klasyfikację przyszłych zbiorów danych.
+
+#### Najlepszy model 
+
+W tej części zostanie dokonana ocena klasyfikacji modelu dla różnych proporcji podziału zbioru danych oraz różnych wartości liczby sąsiadów. Podobnie jak przy k-NN, wybrano odpowiednie udziały zbioru uczącego: 1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10 oraz 19/20, dla metody wielokrotnego podziału oraz bootstrap. Dla metody cross-validation ponownie zbiór podzielono na 2, 5, 10, 20, 50 i 178 (Leave-One-Out) części.
+
+Jako badane parametry wybrano kombinacje *cp*: 0.1, 0.005, oraz *minsplit*: 3, 7, 12. Dodatkowo, w ramach badania overfittingu, dobrano dodatkową parę parametrów(0.001, 1) (w tym przypadku model stworzy oddzielny liść dla każdego przypadku z modelu uczącego).
+
+**NIEPRZYCIĘTE DRZEWO**
+
+```{r include=FALSE, echo=FALSE}
+# Wielokrotny
+podzialy <- c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+parameters <- list(c(0.1, 3), c(0.1, 7), c(0.1, 12),
+             c(0.005, 3), c(0.005, 7), c(0.005, 12), c(0.001, 1))
+
+parametry <- c("cp=0.1 \n minsplit=3",
+               "cp=0.1 \n minsplit=7",
+               "cp=0.1 \n minsplit=12",
+               "cp=0.005 \n minsplit=3",
+               "cp=0.005 \n minsplit=7",
+               "cp=0.005 \n minsplit=12",
+               "cp=0.001 \n minsplit=1")
+parametry <- as.character(1:length(parametry))
+accuracy_matrix_train <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(parameters),
+                          dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"), Sąsiedzi = parametry))
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(parameters),
+                          dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                          Sąsiedzi = parametry))
+
+f1_matrix_train <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(parameters),
+                    dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                    Sąsiedzi = parametry))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(parameters),
+                    dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                    Sąsiedzi = parametry))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(parameters)) {
+    podzial <- podzialy[i]
+    cp <- parameters[[j]][1]
+    minsplit <- parameters[[j]][2]
+    
+    results <- wielokrotny_podział(wine, podzial = podzial, cp = cp, minsplit = minsplit)
+    
+    accuracy_matrix_train[i, j] <- results[[1]]$accuracy_train
+    accuracy_matrix_test[i, j] <- results[[1]]$accuracy_test
+    
+    f1_matrix_train[i, j] <- results[[1]]$metrics_train$F1_Score[4]
+    f1_matrix_test[i, j] <- results[[1]]$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+colnames(accuracy_matrix_train) <- NULL
+kable(accuracy_matrix_train * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór treningowy - nieprzycięte drzewo klasyfikacyjne",
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 44. pokazuje nam, że dla małych zbiorów uczących (stosunek niższy lub równy 1/5) daje bardzo podobne wyniki. Dla reszty widzimy już spore różnice dla odpowiednich *cp* - mniejsze daje lepszą dokładność, rosnącą wraz ze stosunkiem., druga daje natomiast malejącą. Dla drugiej również *minsplit* daje większe zróżnicowanie między poszczególnymi wynikami. Naturalnie, w ostatniej kolumnie mamy po 1 elemencie w liściu, zatem dokładność wynosi 100%.
+
+```{r}
+colnames(accuracy_matrix_test) <- NULL
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór testowy - nieprzycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 45. zachowuje trendy wskazane wcześniej. NMależy jednak zauważyć, że najlepsze wyniki osiąga stosunek 9/10 dla *cp* = 0.005, *minsplit* = 7. Ostatnia kolumna oraz występujące w niej różnice sugerują wystąpienie zjawiska overfittingu (dlatego też trudna uznać wyniki ponad 91% jako lepsze niż te wskazane wcześniej).
+
+```{r}
+colnames(f1_matrix_train) <- NULL
+kable(f1_matrix_train * 100,
+  caption = "Średni F1-score klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór treningowy - nieprzycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 46. widzimy od stosunku 1/5 niewielki wpływ parametru *minsplit* na wartości wskaźnika F1. Lepsze wyniki osiąga mniejsze *cp*, z czego najlepsze drugiego argumentu również najniższego. Większy wpływ *minsplitu* widać dla mniejszych stosunków, gdzie różnice wynoszą ponad 30%. Ponownie, ostatnia kolumna zawiera idealne wręcz wyniki.
+
+```{r}
+colnames(f1_matrix_test) <- NULL
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór testowy - nieprzycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 47. widzimy podobny trend do poprzedniej tabeli: wraz ze wzrostem stosunku zbioru uczącego, zmniejsza sie wpływ *misplit* na wyniki, zwiększa się natomiast dla *cp*. Lepsze wyniki na ogół osiągają niższe wartości argumentów, a ostatnia kolumna ponownie nasuwa na myśl wystąpienie overfittingu.
+
+**PRZYCIĘTE DRZEWO**
+
+```{r, cache=TRUE, include=FALSE, echo=FALSE}
+# Wielokrotny
+podzialy <- c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+parameters <- list(c(0.1, 3), c(0.1, 7), c(0.1, 12),
+             c(0.005, 3), c(0.005, 7), c(0.005, 12), c(0.001, 1))
+
+parametry <- c("cp=0.1, minsplit=3",
+               "cp=0.1, minsplit=7",
+               "cp=0.1, minsplit=12",
+               "cp=0.005, minsplit=3",
+               "cp=0.005, minsplit=7",
+               "cp=0.005, minsplit=12",
+               "cp=0.001, minsplit=1")
+
+parametry <- c("1", "2", "3", "4", "5", "6", "7")
+
+accuracy_matrix_train <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(parameters),
+                          dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                          Sąsiedzi = parametry))
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(parameters),
+                          dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                          Sąsiedzi = parametry))
+
+f1_matrix_train <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(parameters),
+                    dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                    Sąsiedzi = parametry))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(parameters),
+                    dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                    Sąsiedzi = parametry))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(parameters)) {
+    podzial <- podzialy[i]
+    cp <- parameters[[j]][1]
+    minsplit <- parameters[[j]][2]
+    
+    results <- wielokrotny_podział(wine, podzial = podzial, cp = cp, minsplit = minsplit)
+    
+    accuracy_matrix_train[i, j] <- results[[2]]$accuracy_train
+    accuracy_matrix_test[i, j] <- results[[2]]$accuracy_test
+    
+    f1_matrix_train[i, j] <- results[[2]]$metrics_train$F1_Score[4]
+    f1_matrix_test[i, j] <- results[[2]]$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+colnames(accuracy_matrix_train) <- NULL
+kable(accuracy_matrix_train * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór treningowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r}
+colnames(accuracy_matrix_test) <- NULL
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r}
+colnames(f1_matrix_train) <- NULL
+kable(f1_matrix_train * 100,
+  caption = "Średni F1-score klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór treningowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r}
+colnames(f1_matrix_test) <- NULL
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentów cp i minsplit - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c(" " = 1,
+                     "cp=0.1 \n minsplit=3" = 1,
+                     "cp=0.1 \n minsplit=7" = 1,
+                     "cp=0.1 \n minsplit=12" = 1,
+                     "cp=0.005 \n minsplit=3" = 1,
+                     "cp=0.005 \n minsplit=7" = 1,
+                     "cp=0.005 \n minsplit=12" = 1,
+                     "cp=0.001 \n minsplit=1" = 1)) %>%
+    add_header_above(c("Podział \n zbioru" = 1,
+                     "Kombinacje cp i minsplit" = 7)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabele 48., 49., 50. oraz 51. ukazują nam identyczne zalezności do tych uzyskanych przy badaniu nieprzyciętych drzew. Na ogół wyniki są niższe (naturalnie wynika ze "zmniejszenia" dokładności poprzez przycięcie gałęzi), jednak różnice wynoszą ok. 1%-2%. Wyjątek stanowi jedynie ostatnia kolumna - "skracanie" liści spowodowało, że przestały się w nich znajdować pojedyczne obserwacje. Poprawa wyników (najlepsze osiągane dla stosunków 2/3 oraz 4/5) sugeruje nam, że w ten sposób niejako pozbylismy się potencjalnego overfittingu.
+
+#### Najlepszy model na podstawie najlepszych cech dyskryminujących
+
+W przypadku drzew klasyfikacyjnych większa ilość cech wpływa na złożoność obliczeniową mniej niż w przypadku metody k-NN. Dzieje się tak, gdyż na odległość między punktami wpływa każda wartość, natomiast algorytm tworzenia drzew wybiera tylko te istotne cechy. Te nieistotne mogą zostać nawet zignorowane. Jednak w ramach optymalizacji nadal warto rozważyć wybranie podzbioru najistotniejszych cech.
+
+Cechy zastosowane są w tej samej kolejności, co w tabeli \@ref(tab:zmienne).
+
+Dodatkowo, w ramach optymalizacji rozważane są jedynie drzewka obcięte, gdyż zajmują mniej miejsca oraz działają szybciej (widoczne w szczególności przy badaniu dużych zbiorów danych), a osiągają te wyniki całkiem małym kosztem na dokładności oraz wskaźniku F1. Drzewo to najlepsze wyniki osiągnęło przy parametrach: *cp* = 0.005, *minsplit* = 3.
+
+Pomijamy również badanie parametrów dla zbioru uczącego, gdyż najważniejsze jest jak klasyfikator zachowa się dla nowych zbiorów danych.
+
+```{r, cache=TRUE, include=FALSE}
+# Wielokrotny
+podzialy <- c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- wielokrotny_podział(wine_scale[zmienne], K = 10, podzial = podzial,
+                                   cp = 0.005, minsplit = 3)
+    
+    accuracy_matrix_test[i, j] <- results[[2]]$accuracy_test
+    
+    f1_matrix_test[i, j] <- results[[2]]$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - wielokrotny podział - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+ 
+W Tabeli 52. możemy zauważyć, że już od udziału 1/2 danych treningowych pozwala osiągnąć dokładność w okolicach 90%. Do osiągnięcia tej dokładności potrzebne są też tylko 2 cechy. Co ciekawe, dodawanie kolejnych cech w niektórych przypadkach nie poprawia, a wręcz trochę pogarsza poprawną klasyfikację. Najlepszy wynik został osiągnięty dla 6 cech dyskryminacyjnych oraz udziale danych treningowych 9/10.
+ 
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - wielokrotny podział - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 53. wyniki są podobne do poprzednich, z tym że dorby wskaźnik F1 (>85%) otrzymujemy już dla udziału zbioru testowego 1/3, czyli mniej niż poprzednio. Ponownie najwyższy wynik osiągnęło 6 cech oraz udział danych treningowych 9/10.
+
+```{r, cache=TRUE, include=FALSE}
+# Cross_validation
+podzialy <- c(2, 5, 10, 20, 50, 178)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = as.character(podzialy),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- cross_validation(wine_scale[zmienne], K = podzial,
+                                   cp = 0.005, minsplit = 3)
+    
+    accuracy_matrix_test[i, j] <- results[[2]]$accuracy_test
+    
+    f1_matrix_test[i, j] <- results[[2]]$metrics_test$F1_Score[4]
+  }
+}
+
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średni dokładność klasyfikacji dla kombinacji parametrów liczby podzbiorów zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - cross-validation - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 54. zaobserwować możemy, że dobre wyniki uzyskujemy już dla 2-krotnej walidacji oraz 2 cech dyskryminujących. Ponownie zaobserwować można spadek dokładności dla większej liczby cech dyskryminacyjnych (w tym istotny: `r round(accuracy_matrix_test[2, 9]-accuracy_matrix_test[2, 10], 4)*100`%, przy 5-krotnej walidacji i przejściu z 9 na 10 cech). Najlepszy wynik osiągnęła 5-krotna walidacja dla 9 cech, najlepsze skupisko natomiast znajduje się w okolicy punktu 10-krotna walidacja, 3 cechy.
+
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - cross-validation - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 55. zauważyć można, że niezależnie od ilości cech 50 oraz 178-krotna walidacja wypada bardzo słabo (możliwe przeuczenie modelu), oraz 20-krotna, choć akceptowalna, wypada gorzej na tle mniejszej ilości. Najlepsze wyniki osiągane są okolicy 10-krotnej walidacji oraz 3 i 4 cech (dla 4 cech mamy również najwyższy wynik). Wynik powyżej 94% osiągamy również dla wcześniej wymienionych 9 cech - 5-krotnej walidacji.
+
+```{r, cache=TRUE, include=FALSE}
+# Bootstrap
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- bootstrap(wine_scale[zmienne], K = 10, podzial = podzial,
+                                   cp = 0.005, minsplit = 3)
+    
+    accuracy_matrix_test[i, j] <- results[[2]]$accuracy_test
+    
+    f1_matrix_test[i, j] <- results[[2]]$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średni dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - bootstrap - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 56. pokazuje nam, że przy zastosowaniu metody bootstrap wyniki z udziałem zbioru uczącego 1/3 lub niżej osiągają dokładność poniżej 90%, w przypadku 1/2 pojedyncze minimalnie przekraczają ten próg. Najlepszy wynik osiąga nauka na 19/20 przypadków zbioru, przy wykorzystaniu 4 najlepszych cech dyskryminacyjnych. Duże wartości osiągane są również w okolicy tego punktu.
+
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - bootstrap - zbiór testowy - przycięte drzewo klasyfikacyjne", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 57. możemy zaobserwować wyniki podobne do poprzednich. W tym przypadku wskazują one jednak na wysoką wydajność predykcyjną modelu. Najlepszy wynik ponownie uzyskujemy dla udziału zbioru uczącego 9/10 oraz 4 cech, oraz bardzo dobre w jego okolicach.
+
+Podsumowując:
+
+* Walidacja krzyżowa (cross-validation) najlepsze wyniki osiąga dla 3-5 cech oraz liczby podziałów poniżej 10.
+* W przypadku tradycyjnego podziału wystarczy zastosować co najmniej 2 najlepiej dyskryminujące cechy, stosunek zbioru uczącego natomiast powinien wynieść co najmniej 2/3.
+
+### Naiwny klasyfikator bayesowski
+
+W tej części zajmiemy się porównaniem wyników uzyskiwanych poprzez nieobcięte drzewa, oraz ich optymalnie przycięte odpowiedniki. Następnie najlepsze drzewo zostanie zbadane pod kątem ilości najlepszych cech dyskryminujących, które pozwolą na maksymalizację dokładności oraz wskaźnika F1.
+
+Ta część sprawozdania skupi się na ocenie metody klasyfikacyjnej w postaci naiwnego klasyfikatora bayesowskiego (naiwnego, gdyż zakłada on niezależność zmiennych, tymczasem niekoniecznie jest to prawdą). Następnie za pomocą metod bootstrap, cross-validation oraz wielokrotny podział, ocenimy skuteczność NB w zależności od liczby cech dyskryminujących.
+
+#### *Laplace*: lepsze 0 czy 1?
+
+W ramach badania najlepszego naiwnego klasyfikatora bayesowskiego, na początku skupimy się na argumencie *laplace*. W trakcie liczenia odpowiednich prawdopodobieństw warunkowych dodaje ona liczbę do licznika. Głównie powoduje to, że wcześniejsze prawdopodobieństwa zerowe stają się liczbami bliskimi zera, co z kolei może wpływać na wyniki. Ustalone to zostanie przy stosunku 2:1 zbioru uczącego do zbioru testowego dla bootstrap i wielokrotnego podziału, oraz przy 10 częściach dla cross-validation.
+
+``` {r wielokrotny-podzial3, cache=TRUE, echo=FALSE}
+wielokrotny_podział <- function(data = wine, K = 100, podzial = 2/3,
+                                laplace = 0) {
+  # Wielokrotny podział
+  n <- nrow(data)
+
+  sum_acc_train <- 0
+  sum_acc_test <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test <- NULL
+
+  for (i in seq_len(K)) {
+    train_idx <- sample(seq_len(n), size = floor(podzial * n))
+    train.set <- data[train_idx, ]
+    test.set <- data[-unique(train_idx), ]
+    
+    model.NB <- naiveBayes(Gatunek ~ ., data = train.set, laplace = laplace)
+
+    pred_train <- predict(model.NB, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(model.NB, newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+  }
+
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+
+  return(list(
+    accuracy_train = avg_acc_train,
+    accuracy_test  = avg_acc_test,
+    metrics_train  = avg_metrics_train,
+    metrics_test   = avg_metrics_test
+  ))
+}
+```
+
+``` {r cross-validation3, cache=TRUE, echo=FALSE}
+cross_validation <- function(data = wine, K = 10, laplace = 0) {
+  # Cross-validation
+  n <- nrow(data)
+  sum_acc_train <- 0
+  sum_acc_test  <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test  <- NULL
+
+  folds <- sample(rep(seq_len(K), length.out = n))
+
+  for (i in seq_len(K)) {
+    train.set <- data[folds != i, ]
+    test.set  <- data[folds == i, ]
+
+    model.NB <- naiveBayes(Gatunek ~ ., data = train.set, laplace = laplace)
+
+    pred_train <- predict(model.NB, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(model.NB, newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test  <- sum_acc_test  + acc_test
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test  <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test  <- sum_metrics_test  + metrics_test
+    }
+  }
+
+  avg_acc_train    <- sum_acc_train / K
+  avg_acc_test     <- sum_acc_test  / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test  <- sum_metrics_test  / K
+
+  return(list(
+    accuracy_train = avg_acc_train,
+    accuracy_test  = avg_acc_test,
+    metrics_train  = avg_metrics_train,
+    metrics_test   = avg_metrics_test
+  ))
+}
+```
+
+``` {r bootstrap3, cache=TRUE, echo=FALSE}
+bootstrap <- function(data = wine, K = 100, podzial = 2/3, laplace = 0) {
+  # Bootstrap
+  n <- nrow(data)
+
+  sum_acc_train <- 0
+  sum_acc_test <- 0
+  sum_metrics_train <- NULL
+  sum_metrics_test <- NULL
+
+  for (i in seq_len(K)) {
+    train_idx <- sample(seq_len(n), size = floor(podzial * n), replace = TRUE)
+    train.set <- data[train_idx, ]
+    test.set <- data[-unique(train_idx), ]
+
+    model.NB <- naiveBayes(Gatunek ~ ., data = train.set, laplace = laplace)
+
+    pred_train <- predict(model.NB, newdata = train.set, type = "class")
+    cm_train <- table(Prawdziwa = train.set$Gatunek, Przewidziana = pred_train)
+    acc_train <- sum(diag(cm_train)) / sum(cm_train)
+    metrics_train <- metryki(cm_train)
+    
+    pred_test <- predict(model.NB, newdata = test.set, type = "class")
+    cm_test <- table(Prawdziwa = test.set$Gatunek, Przewidziana = pred_test)
+    acc_test <- sum(diag(cm_test)) / sum(cm_test)
+    metrics_test <- metryki(cm_test)
+
+    sum_acc_train <- sum_acc_train + acc_train
+    sum_acc_test <- sum_acc_test + acc_test
+
+    if (is.null(sum_metrics_train)) {
+      sum_metrics_train <- metrics_train
+      sum_metrics_test <- metrics_test
+    } else {
+      sum_metrics_train <- sum_metrics_train + metrics_train
+      sum_metrics_test <- sum_metrics_test + metrics_test
+    }
+  }
+
+  avg_acc_train <- sum_acc_train / K
+  avg_acc_test <- sum_acc_test / K
+  avg_metrics_train <- sum_metrics_train / K
+  avg_metrics_test <- sum_metrics_test / K
+
+  return(list(
+    accuracy_train = avg_acc_train,
+    accuracy_test  = avg_acc_test,
+    metrics_train  = avg_metrics_train,
+    metrics_test   = avg_metrics_test
+  ))
+}
+
+```
+
+```{r, cache=TRUE, include=FALSE}
+metoda <- c("Wielokrotny podział", "Cross-validation", "Bootstrap", "Średnio")
+fun_list <- list(wielokrotny_podział, cross_validation, bootstrap)
+
+matryca <- matrix(NA,
+                    nrow = 4,
+                    ncol = 4,
+                    dimnames = list(c("Dokładność (laplace = 0)", "Dokładność (laplace = 1)", "F1 score (laplace = 0)", "F1 score (laplace = 1)"), metoda))
+
+for (i in seq_along(fun_list)) {
+  results <- fun_list[[i]](wine, laplace = 0)
+  
+  avg_accuracy <- results$accuracy_test
+  matryca[1, i] <- avg_accuracy
+    
+  avg_f1 <- results$metrics_test$F1_Score[4]
+  matryca[3, i] <- avg_f1
+}
+
+for (i in seq_along(fun_list)) {
+  results <- fun_list[[i]](wine, laplace = 1)
+  
+  avg_accuracy <- results$accuracy_test
+  matryca[2, i] <- avg_accuracy
+    
+  avg_f1 <- results$metrics_test$F1_Score[4]
+  matryca[4, i] <- avg_f1
+}
+
+matryca[, 4] <- rowMeans(matryca[, 1:3])
+```
+
+```{r, echo=FALSE}
+kable(matryca*100,
+      caption = "Średnie dokładność klasyfikacji oraz F1-score dla naiwnego klasyfikatora bayesowskiego, z podziałem na metody oceny oraz argument laplace",
+      digits=2) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W tabeli 58. widać, że argument *laplace* niewiele wpływa zarówno na dokładność, jak i F1-score. Minimalnie większe wyniki osiąga naiwny klasyfikator bayesowski dla *laplace* = 0, z wyjątkiem wskaźnika F1 dla wielokrotnego podziału.
+
+#### Najlepszy model 
+
+Przy ocenie najlepszego modelu ponownie zostanie zastosowany odpowiedni udział zbioru uczącego dla metod wielokrotnego podziału i bootstrap: 1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10 oraz 19/20, oraz stosowny podział dla walidacji krzyżowej: 2, 5, 10, 20, 50, 178 (Leave-One-Out). W ramach badania parametru ponownie zobaczymy wpływ zmiennej *laplace* wynoszącej 0 lub 1.
+
+```{r, cache=TRUE, include=FALSE, echo=FALSE}
+# Wielokrotny
+podzialy <- c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+laplace <- c(0, 1)
+
+accuracy_matrix_train <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(laplace),
+                          dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                          Sąsiedzi = as.character(laplace)))
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(laplace),
+                          dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                          Sąsiedzi = as.character(laplace)))
+
+f1_matrix_train <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(laplace),
+                    dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                    Sąsiedzi = as.character(laplace)))
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(laplace),
+                    dimnames = list(Podział = c("1/20", "1/10", "1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20") ,
+                                    Sąsiedzi = as.character(laplace)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(laplace)) {
+    podzial <- podzialy[i]
+    lp <- laplace[j]
+    
+    results <- wielokrotny_podział(wine, podzial = podzial, laplace = lp)
+    
+    accuracy_matrix_train[i, j] <- results$accuracy_train
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_train[i, j] <- results$metrics_train$F1_Score[4]
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_train * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentu laplace - zbiór treningowy - naiwny klasyfikator bayesowski", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Laplace" = 2)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 59. widać, że dla zbiorów uczących otrzymujemy bardzo dobrą dokładność dla obu parametrów (powyżej 94%). Różnice między poszczególnymi parametrami przy odpowiednich stosunkach zbioru uczącego są zróżniocowane, jednak niewielkie (poniżej 1%).
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów
+podziału zbioru oraz argumentu laplace - zbiór testowy - naiwny klasyfikator bayesowski", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Laplace" = 2)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 60. pokazuje, że wcześniejszy trend został jedynie częściowo zachowany. Dla stosunków 1/20 oraz 1/10 zbiór treningowy jest za mały, przez co dostajemy odpowiednio słabą oraz nienajlepszą kategoryzację. Natomiast pozostałe wyniki wynoszą ponad 94% i ponownie, różnice są bardzo małe.
+
+```{r}
+kable(f1_matrix_train * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz argumentu laplace - zbiór treningowy - naiwny klasyfikator bayesowski", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Laplace" = 2)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 61. wskazuje na to, że oprócz stosunku zbioru uczącego 1/20, otrzymujemy bardzo wysokie wskaźniki F1 (powyżej 98%). Mówi to nam, że zbiorów treningowych naiwny klasyfikator bayesowski bardzo dobrze radzi sobie z rozróżnianiem nierównowagi klas.
+
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz argumentu laplace - zbiór testowy - naiwny klasyfikator bayesowski", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Laplace" = 2)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 62.widzimy, podobnie jak między dokładnością w zbiorach uczącym i treningowym, prawie zachowany trend. Dla stosunku zbioru uczącego 1/20 otrzymujemy bardzo słaby wynik, a dla 1/10 - raczej słaby. Dla pozostałych F1-score jest wysoki (powyżej 94%). Istnieje również zgodność z dokładnoscią - parametr, który lepiej zaklasyfikował gatunki win, miał również lepszy wskaźnik F1. Wyjątkiem jest stosunek 1/20.
+
+#### Najlepszy model na podstawie najlepszych cech dyskryminujących
+
+Podobnie jak wcześniej, cechy zastosowane są w tej samej kolejności, co w tabeli \@ref(tab:zmienne). Zastosowany zostanie jedynie parametr *laplace* = 0, jednak jako iż wcześniejsze badania to wykazały, wyniki otrzymane dla 1 byłyby bardzo zbliżone, i osiągnięte różnice byłyby niewielkie. I tak samo jak wcześniej, rozważymy tylko wyniki dla zbioru testowego.
+
+```{r, cache=TRUE}
+# Wielokrotny
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- wielokrotny_podział(wine_scale[zmienne], podzial = podzial,
+                                   laplace = 0)
+    
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - wielokrotny podział - zbiór testowy - naiwny klasyfikator bayesowski (laplace=0)", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+ 
+W Tabeli 63. widzimy niezadowalające wyniki dla stosunku zbioru uczącego 1/20, oraz dla tylko 1 cechy dyskryminującej. Oprócz pojedynczych przypadków zauważyć można, że dla każdej liczby stosunków liczba cech odpowiednio zwiększa lub zmniejsza dokładność. "Stabilne" wyniki, pozostające stale powyżej 90%, otrzymujemy dla 3 cech, z wyjątkiem stosunku 1/10, który oscyluje między 80% a 90%. Najwyższe wyniki uzyskujemy dla wszystkich 13 cech.
+ 
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - wielokrotny podział - zbiór testowy - naiwny klasyfikator bayesowski (laplace=0)", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 64. wielokrotny podział zapewnie trend podobny do tego z tabeli 63.: stosunek 1/20 oraz 1 cecha dają słaby wskaźnik F1, 1/10 daje jedynie zadowalający, od 3 cech otrzymujemy stabilne F1-score powyżej 90%, oraz najlepsze dostajemy dla 13 cech (z wyjątkiem stosunku 1/5, tam 12 cech daje niewiele, ale lepszy wynik).
+
+```{r, cache=TRUE}
+# Cross-validation
+podzialy <- c(2, 5, 10, 20, 50, 178)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = as.character(podzialy),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = as.character(podzialy),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- cross_validation(wine_scale[zmienne], K = podzial, laplace = 0)
+    
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów liczba podzbiorów oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - cross-validation - zbiór testowy - naiwny klasyfikator bayesowski (laplace=0)", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 65. pokazuje bardzo dobre wyniki wyznaczone przez krzyżową walidację. Dla 1 i 2 cech otrzymujemy jedynie wyniki poniżej 90% (w tym poniżej 80% tylko dla 1 cechy i 2 podziałów). Podobnie jak wcześniej, najlepsze wyniki otrzymaliśmy dla 13 cech (z wyjątkiem 5 podziałów, gdzie wystarczyło 5 cech).
+ 
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów liczby podzbiorów oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - cross-validation - zbiór testowy - naiwny klasyfikator bayesowski (laplace=0)", 
+  digits = 2) %>%
+  add_header_above(c("Liczba \n podzbiorów" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 66. widzimy, że wskaźniki F1 zachowują się wręcz identycznie jak pomiary dokładności, z wyjątkiem podziałów 50 oraz 178. Dla 50 wyniki są poniżej 80%, zatem nienajlepiej radzi sobie z wykrywaniem pozytywnych przypadków, lub poprawnym rozpoznawaniem negatywnych przypadków. Dla 178 wyniki są poniżej 33%, czyli modele te są bardzo słabymi modelami (pomimo wysokiej dokładności). 
+
+```{r, cache=TRUE}
+# Bootstrap
+podzialy = c(1/20, 1/10, 1/5, 1/3, 1/2, 2/3, 4/5, 9/10, 19/20)
+podzbiory_zmienne <- lapply(1:length(posortowane_zmienne), function(i) posortowane_zmienne[1:i])
+
+
+accuracy_matrix_test <- matrix(NA,
+                          nrow = length(podzialy),
+                          ncol = length(podzbiory_zmienne),
+                          dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                          Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+
+f1_matrix_test <- matrix(NA,
+                    nrow = length(podzialy),
+                    ncol = length(podzbiory_zmienne),
+                    dimnames = list(Podział = c("1/20", "1/10","1/5", "1/3", "1/2", "2/3", "4/5", "9/10", "19/20"),
+                                    Sąsiedzi = 1:length(podzbiory_zmienne)))
+
+for (i in seq_along(podzialy)) {
+  for (j in seq_along(podzbiory_zmienne)) {
+    podzial <- podzialy[i]
+    zmienne <- c(podzbiory_zmienne[[j]], "Gatunek")
+    
+    results <- bootstrap(wine_scale[zmienne], podzial = podzial,
+                                   laplace = 0)
+    
+    accuracy_matrix_test[i, j] <- results$accuracy_test
+    
+    f1_matrix_test[i, j] <- results$metrics_test$F1_Score[4]
+  }
+}
+```
+
+```{r}
+kable(accuracy_matrix_test * 100,
+  caption = "Średnia dokładność klasyfikacji dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - bootstrap - zbiór testowy - naiwny klasyfikator bayesowski (laplace=0)", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+W Tabeli 67. widać, że dokładność osiągana przy metodzie boostrap jest bardzo podobna do tej osiąganej przez wielokrotny podział, nie wnoszą zatem nic nowego.
+ 
+```{r}
+kable(f1_matrix_test * 100,
+  caption = "Średni F1-score dla kombinacji parametrów podziału zbioru oraz liczby zmiennych o najlepszej zdolności dyskryminacyjnej - bootstrap - zbiór testowy - naiwny klasyfikator bayesowski (laplace=0)", 
+  digits = 2) %>%
+  add_header_above(c("Podział \n zbioru" = 1, "Liczba zmiennych o najlepszych zdolnościach dyskryminacyjnych" = 13)) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabele 67. oraz 68., wykonane metodą boostrap, dają wyniki bardzo zbliżone do tych osiągniętych wielokrotnym podziałem, zatem nie wnoszą nic nowego.
+
+Podsumowując:
+
+* Dla tradycyjnego podziału optymalny udział danych treningowych wynosi ponad 20% (podział 1/5), przy czym najlepsze rezultaty uzyskujemy wykorzystując wszystkie cechy (jednak już dla 4 osiągamy bardzo wysokie dokładność oraz F1-score).
+* W przypadku walidacji krzyżowej (cross-validation) wystarczy stosować liczbę podziałów poniżej 50 (najbardziej optymalnie - 10 foldów) oraz wybór co najmniej 5 najsilniej dyskryminujących cech.
+
+## Porównanie metod klasyfikacji
+
+Najważniejszymi parametrami porównywania metod klasyfikacji są przede wszystkim czas działania oraz dokładność metody.
+
+Porównamy to dla najlepszych parametrów każdej metody, czyli:
+
+* *liczba sąsiadów* = 1 oraz 8 najlepszych cech - k-NN,
+* *cp* = 0.005, *minsplit* = 3 oraz 3 najlepsze cechy - drzewo klasyfikacyjne,
+* *laplace* = 0 oraz 5 najlepszych cech- naiwny klasyfikator bayesowski.
+
+Każdy zbiór będzie uczony na tym samym modelu, wynoszącym 9/10 danych, klasyfikować będzie natomiast cały zbiór.
+
+Najwyższy F1-score uzyskał **Naive Bayes** (97,29 %), nieznacznie przewyższając **k-NN** (96,53 %). **Drzewo klasyfikacyjne** osiągnęło nieco niższą maksymalną wartość (93,76 %). Oznacza to, że przy optymalnych parametrach Naive Bayes zapewnia minimalnie lepszą precyzję i czułość niż k-NN, podczas gdy drzewo decyzyjne, choć wciąż skuteczne, nie dorównuje obu pozostałym metodom pod względem czystej dokładności.
+
+Z wcześniejszych badań otrzymaliśmy, że najgorszą zdolność dyskryminacyjną otrzymaliśmy dla drzew, najlepsze zaś dla naiwnego Bayesa.
+
+Na Wykresie 12. widać czas działania najlepszych wersji metod do klasyfikacji. Widać że najszybciej radzi sobie k-NN, a jajdłużej Naiwny Bayes.
+
+```{r, cache=TRUE, echo=FALSE}
+n <- nrow(wine_scale)
+
+indeksy <- sample(seq_len(n), size = floor(9/10 * n))
+
+zmienne <- c(podzbiory_zmienne[[8]], "Gatunek")
+zbior_knn <- wine_scale[indeksy, zmienne]
+wine_scale_knn <- wine_scale[, zmienne]
+
+zmienne <- c(podzbiory_zmienne[[3]], "Gatunek")
+zbior_drzewo <- wine_scale[indeksy, zmienne]
+wine_scale_drzewo <- wine_scale[, zmienne]
+
+zmienne <- c(podzbiory_zmienne[[5]], "Gatunek")
+zbior_nb <- wine_scale[indeksy, zmienne]
+wine_scale_nb <- wine_scale[, zmienne]
+
+drzewo <- rpart(Gatunek ~ .,
+                  data = zbior_drzewo,
+                  method = "class",
+                  control = rpart.control(cp = 0.005, minsplit = 3))
+
+model.NB <- naiveBayes(Gatunek ~ .,
+                       data = zbior_nb)
+
+speed <- microbenchmark(
+  
+  "Drzewko klasyfikacyjne" = {predict(drzewo,
+                                      newdata = wine_scale_drzewo,
+                                      type = "class")},
+  
+  "k-NN" = {knn(
+    train = zbior_knn[, setdiff(names(zbior_knn), "Gatunek"), drop = FALSE],
+    test  = wine_scale_knn[, setdiff(names(zbior_knn), "Gatunek"), drop = FALSE],
+    cl    = zbior_knn$Gatunek,
+    k     = 1)},
+  
+  "Naiwny Bayes" = {predict(model.NB,
+                            newdata = wine_scale_nb,
+                            type = "class")},
+  
+  times = 1000L
+)
+```
+
+```{r, fig.cap="Porównanie klasyfikacji całego zbioru dla konkretnych metod"}
+autoplot(speed) + ggtitle("")
+```
+
+## Wnioski
+
+* Rozszerzenie przestrzeni cech w regresji liniowej znacząco poprawia jakość klasyfikacji – zarówno na zbiorze treningowym, jak i testowym odnotowano wyraźny spadek błędu oraz wzrost dokładności i F1-score. Pokazuje to, że skuteczność regresji liniowej jako metody klasyfikacji silnie zależy od odpowiedniej reprezentacji danych wejściowych.
+* Naiwny Bayes (laplace = 0, 5 cech) osiągnął najwyższy F1-score (97,29 %), co dowodzi jego przewagi w precyzji i czułości przy optymalnych ustawieniach.
+* k-NN (k = 1, 8 cech) był najszybszy w klasyfikacji pełnego zbioru, co czyni go doskonałym wyborem w aplikacjach czasu rzeczywistego, pod warunkiem zapewnienia wystarczającej pamięci na przechowanie danych treningowych.
+* Najmniej wrażliwy na przeuczenie okazał się Naiwny Bayes – wąski zakres wyników F1 przy różnych konfiguracjach potwierdza stabilność tego modelu.
+* Wszystkie metody znacząco zyskują przy wzroście udziału danych treningowych od 20 % do 90 %, jednak k-NN i Bayes odnotowały największy wzrost skuteczności.
+* Drzewo decyzyjne (cp = 0,005, minsplit = 3, 3 cechy) oferuje najczytelniejszy model reguł, z akceptowalnym F1-score (93,76 %), co czyni je rekomendowanym wyborem tam, gdzie wymagana jest pełna przejrzystość decyzji.
+* Rekomendacje praktyczne:
+  1. **Gdy priorytetem jest maksymalna dokładność i stabilność** – wybór pada na Naiwny Bayes.
+  2. **Gdy kluczowa jest szybkość klasyfikacji** – najlepszym rozwiązaniem jest k-NN.
+  3. **Gdy potrzebna jest interpretowalność i kontrola złożoności** – optymalne okażą się drzewa decyzyjne.
+
+**Ogólny wniosek**: Dobór metody powinien zależeć od specyfiki projektu — jeżeli wymagane są maksymalne wyniki i odporność na zmienność danych, rekomendujemy Naiwny Bayes; jeżeli liczy się czas, preferowany jest k-NN; w przypadku konieczności transparentności modelu i łatwej analizy reguł optymalnym wyborem pozostają drzewa decyzyjne.
+
+
+```{r}
+end = Sys.time()
+spend = end - start
+
+total_seconds = as.numeric(spend, units = "secs")
+
+minutes = floor(total_seconds / 60)
+seconds = floor(total_seconds %% 60)
+```
+
+PS. Czas wykonywania kodu wynosi `r minutes` minut i `r seconds` sekund.
