@@ -1,0 +1,521 @@
+---
+title: "Raport - Zaawansowane metody klasyfikacji oraz analiza skupień – algorytmy grupujące i hierarchiczne"
+author: "Filip Michewicz 282239  \n  Wiktor Niedźwiedzki 258882"
+date: "10 czerwca 2025 Anno Domini"
+output:
+  pdf_document:
+    number_sections: true
+toc: true
+lof: true
+lot: true
+header-includes:
+  - \usepackage[OT4]{polski}
+  - \usepackage[utf8]{inputenc}
+  - \usepackage{graphicx}
+  - \usepackage{float}
+  - \renewcommand{\contentsname}{Spis treści}
+  - \renewcommand{\listfigurename}{Spis wykresów}
+  - \renewcommand{\listtablename}{Spis tabel}
+  - \renewcommand{\figurename}{Wykres}
+  - \renewcommand{\tablename}{Tabela}
+  - \usepackage{xcolor}
+  - \definecolor{ForestGreen}{rgb}{0.1333, 0.5451, 0.1333}
+  - \definecolor{SteelBlue}{rgb}{0.2745, 0.5098, 0.7059}
+  - \definecolor{Tomato}{rgb}{1.0, 0.3882, 0.2784}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  dpi = 1200,
+  message = FALSE,
+  warning = FALSE,
+  error = TRUE,
+  eval = TRUE,
+  echo = FALSE,
+  fig.align="center",
+  fig.width = 7,
+  fig.height = 4,
+  fig.pos = "H",
+  out.extra = '')
+```
+
+```{r biblioteki+zmienne_pomocnicze}
+library(adabag)
+library(ipred)
+library(rpart)
+library(rpart.plot)
+library(mlbench)
+library(randomForest)
+library(HDclassif)
+library(e1071)
+library(knitr)
+library(kableExtra)
+
+start <- Sys.time()
+
+data(wine)
+set.seed(21370)
+```
+
+```{r metryki}
+metryki <- function(conf) {
+  TP <- diag(conf)
+  FP <- colSums(conf) - TP
+  FN <- rowSums(conf) - TP
+  TN <- sum(conf) - (TP + FP + FN)
+  
+  precision <- ifelse((TP + FP) == 0, 0, TP / (TP + FP))
+  recall <- ifelse((TP + FN) == 0, 0, TP / (TP + FN))
+  f1 <- ifelse((precision + recall) == 0, 0, 
+               2 * precision * recall / (precision + recall))
+  
+  accuracy <- sum(TP) / sum(conf)
+  accuracy_per_class <- (TP + TN) / (TP + TN + FP + FN)
+  
+  results <- data.frame(
+    Accuracy = accuracy_per_class,
+    Precision = precision,
+    Recall = recall,
+    F1_Score = f1
+  )
+  
+  avg_metrics <- c(
+    Accuracy = mean(accuracy_per_class), 
+    Precision = mean(precision), 
+    Recall = mean(recall), 
+    F1_Score = mean(f1)
+  )
+  
+  results <- rbind(results, avg_metrics)
+  rownames(results)[nrow(results)] <- "Średnie"
+  
+  return(results)
+}
+```
+
+\newpage
+
+# Zaawansowane metody klasyfikacji
+
+W pierwszej części zadania zastosujemy algorytmy *ensemble learning* (bagging,
+boosting i random forest) w celu poprawy dokładności cech klasyfikacyjnych. W drugiej natomiast poznamy i ocenimy nową metodę klasyfikacji - metodę wektorów nośnych (SVM).
+
+Zadanie zostanie wykonane na zbiorze danych *wine*, którego szczegółowy opis znajduje się w poprzednim raporcie.
+
+## Rodziny klasyfikatorów/uczenie zespołowe
+
+Wyróżniamy trzy algorytmy uczenia zespołowego (ang. ensemble learning):
+
+* **Bagging** - generujemy B-bootstrapowych replikacji zbioru uczącego, na podstawie których tworzymy B klasyfikatorów. Następnie łączymy je w klasyfikator zagregowany, który przydziela dane cechy do klas za pomocą reguły "głosowania większości" (w przypadku remisu wybiera losowo). Każdy klasyfikator powstaje niezależnie (w sensie takim, że wyniki poprzednich nie mają wpływu na generowanie nowych).
+* **boosting** - podobnie jak w bagging, tworzymy klasyfikator zagregowany złożony z wielu pojedynczych klasyfikatorów. Jednak różnica jest taka, że klasyfikatory powstają sekwencyjnie. Na początku każda cecha w zbiorze ma przypisaną taką samą wagę. Z każdą kolejną iteracją natomiast waga zwiększa się dla uprzednio źle sklasyfikowanych przypadków.
+* **random forest** (dla drzew klasyfikacyjnych) - metoda podobna do bagging z tą różnicą, że klasyfikatory powstają na podstawie różnych m-elementowych podzbiorach cech (m mniejsze bądź równe wszystkim cechom).
+
+```{r}
+colnames(wine) <- c(
+  "Gatunek", "Alkohol", "Kwas_mlekowy", "Popiół", "Zasadowość_popiołu", 
+  "Magnez", "Fenole_ogółem", "Flawonoidy", 
+  "Fenole_nieflawonoidowe", "Proantocyjanidyny",
+  "Koloru", "Barwa", "OD280_OD315", "Prolina"
+)
+wine$Gatunek <- as.factor(wine$Gatunek)
+wine$Magnez <- as.numeric(wine$Magnez)
+wine$Prolina <- as.numeric(wine$Prolina)
+```
+
+### k-NN
+
+### Naiwny klasyfikator bayesowski
+
+### Drzewa klasyfikacyjne
+
+**MOŻE BYĆ NIEPOPRAWNIE W CHUJ**
+
+```{r, cache = TRUE}
+mypredict.rpart <- function(object, newdata)  predict(object, newdata=newdata, type="class")
+mypredict.boost <- function(object, newdata) as.factor(predict(object, newdata=newdata)$class)
+
+K <- 10
+est <- "632plus"
+lista <- list()
+B.vector <- c(1, 5, 10, 20, 30, 40, 50, 100)
+
+error.tree <- (errorest(Gatunek~., data = wine, model = rpart,
+               predict = mypredict.rpart,
+               estimator = est,
+               est.para = control.errorest(nboot = K)))$error
+
+error.bagging <- 0
+error.randomForest <- 0
+error.boosting <- 0
+
+for(b in B.vector){
+  
+  error.bagging <- (errorest(Gatunek~., data = wine, model = bagging,
+                                            estimator = est,
+                                            est.para = control.errorest(nboot = K),
+                                            nbagg = b))$error
+    
+  error.randomForest <- (errorest(Gatunek~., data = wine, model = randomForest,
+                                                      estimator = est,
+                                                      est.para = control.errorest(nboot = K),
+                                                      model.args = list(ntree = b)))$error
+    
+  error.boosting <- (errorest(Gatunek~., data = wine, model = boosting,
+                                              predict = mypredict.boost,
+                                              estimator = est,
+                                              est.para = control.errorest(nboot = K),
+                                              model.args = list(mfinal = b)))$error
+  
+  poprawa <- c((error.tree - error.bagging)/error.tree*100,
+               (error.tree - error.randomForest)/error.tree*100,
+              (error.tree - error.boosting)/error.tree*100)
+  
+  lista[[as.character(b)]] <- poprawa
+
+}
+
+matrix <- do.call(cbind, lista)
+matrix <- rbind(matrix, colSums(matrix)/3)
+rownames(matrix) <- c("Bagging", "Random Forest", "Boosting", "Średnia")
+```
+
+```{r}
+kable(matrix,
+  caption = "Średnia poprawa dokładności klasyfikacji za pomocą drzewa klasyfikacyjnego, z podziałem na algorytmy uczenia zespołowego oraz liczbę replikacji", 
+  digits = 2)
+```
+
+## Gówno
+
+W tej części przeprowadzona będzie klasyfikacja na podstawie metody wektorów nośnych, z podziałem na różne funkcje jądrowe.
+
+**COŚ O TYM CO TO WOGÓLE JEST**
+
+```{r super-uper-duper-ultra-zajebiste-funkcje, cache = TRUE}
+
+C <- 10^(-3:3) #kara
+gamma <- round(seq(from = .01, to = 10, length.out = 10), 2)
+
+#NIE działają dla kernel = "linear"
+
+#Wielokrotny podział
+kernel.type <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
+  
+  df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
+  
+  rownames(df) <- as.character(C)
+  colnames(df) <- as.character(gamma)
+  
+  for(c in C){
+    
+    for(g in gamma){
+      
+      accuracy <- 0
+      
+      for(i in 1:K){
+        
+        id.learn <- sample(seq_len(nrow(wine)),
+                           size = floor(nrow(wine) * size1))
+        train.set <- wine[id.learn, ]
+        test.set <- wine[-id.learn, ]
+        
+        svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
+                   gamma = g, cost = c)
+        
+        prediction <- predict(svm, newdata=test.set)
+        prediction <- table(prediction, test.set$Gatunek)
+        
+        accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+      }
+      
+      df[as.character(c), as.character(g)] <- round(accuracy/K*100, 2)
+    
+    }
+  }
+  
+  return(df)
+}
+
+#Cross-validation
+kernel.type.cv <- function(C1 = C, gamma1 = gamma,  K = 10, kernel){
+  
+  df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
+  
+  rownames(df) <- as.character(C)
+  colnames(df) <- as.character(gamma)
+  
+  folds <- sample(rep(seq_len(K), length.out = nrow(wine)))
+  
+  for(c in C){
+    
+    for(g in gamma){
+      
+      accuracy <- 0
+      
+      for(i in 1:K){
+        
+        train.set <- wine[folds != i, ]
+        test.set <- wine[folds == i, ]
+        
+        svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
+                   gamma = g, cost = c)
+        
+        prediction <- predict(svm, newdata=test.set)
+        prediction <- table(prediction, test.set$Gatunek)
+        
+        accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+      }
+      
+      df[as.character(c), as.character(g)] <- round(accuracy/K*100, 2)
+    
+    }
+  }
+  
+  return(df)
+}
+
+#Bootstrap
+kernel.type.bs <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
+  
+  df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
+  
+  rownames(df) <- as.character(C)
+  colnames(df) <- as.character(gamma)
+  
+  for(c in C){
+    
+    for(g in gamma){
+      
+      accuracy <- 0
+      
+      for(i in 1:K){
+        
+        id.learn <- sample(seq_len(nrow(wine)),
+                           size = floor(nrow(wine) * size1),
+                           replace = TRUE)
+        train.set <- wine[id.learn, ]
+        test.set <- wine[-id.learn, ]
+        
+        svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
+                   gamma = g, cost = c)
+        
+        prediction <- predict(svm, newdata=test.set)
+        prediction <- table(prediction, test.set$Gatunek)
+        
+        accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+      }
+      
+      df[as.character(c), as.character(g)] <- round(accuracy/K*100, 2)
+    
+    }
+  }
+  
+  return(df)
+}
+
+```
+
+### Jądro liniowe
+
+```{r, cache = TRUE}
+
+df <- matrix(NA, nrow = 3, ncol = length(C))
+
+#Wielokrotny podział
+col <- 0
+for(c in C){
+  
+  col <- col + 1
+  
+  accuracy <- 0
+  for(i in seq_len(K)){
+    
+    id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3))
+    train.set <- wine[id.learn, ]
+    test.set <- wine[-id.learn, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "linear", cost = c)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  }
+  
+  df[1, col] <- round(accuracy/K*100, 2)
+}
+
+#Cross-validation
+folds <- sample(rep(seq_len(K), length.out = nrow(wine)))
+col <- 0
+
+for(c in C){
+  
+  col <- col + 1
+  
+  accuracy <- 0
+  for(i in seq_len(K)){
+    
+    train.set <- wine[folds == i, ]
+    test.set <- wine[folds != i, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "linear", cost = c)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  }
+  
+  df[2, col] <- round(accuracy/K*100, 2)
+}
+
+#Bootstrap
+col <- 0
+
+for(c in C){
+  
+  col <- col + 1
+  
+  accuracy <- 0
+  for(i in seq_len(K)){
+    
+    id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3),
+                       replace = TRUE)
+    train.set <- wine[id.learn, ]
+    test.set <- wine[-id.learn, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "linear", cost = c)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  }
+  
+  df[3, col] <- round(accuracy/K*100, 2)
+}
+
+df <- rbind(df, colMeans(df))
+df <- as.data.frame(df)
+rownames(df) <- c("Wielokrotny podział",
+                  "Cross-validation",
+                  "Bootstrap",
+                  "Średnio")
+colnames(df) <- as.character(C)
+```
+
+```{r}
+kable(df, caption = "Jądro liniowe")
+```
+
+### Jądro wielomianowe
+
+```{r, cache = TRUE}
+dataFrame <- kernel.type(kernel="polynomial")
+
+kable(dataFrame,
+      caption = "Jądro wielomianowe - wielokrotny podział")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(kernel="polynomial"),
+      caption = "Jądro wielomianowe - cross-validation")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(kernel="polynomial"),
+      caption = "Jądro wielomianowe - bootstrap")
+```
+
+```{r, cache = TRUE}
+best_gamma <- 0
+best_C <- 0
+kandydat <- 0
+
+for(i in C){
+  for(j in gamma){
+    cell <- dataFrame[as.character(i), as.character(j)]
+    if(cell > kandydat){
+      best_gamma <- j
+      best_C <- i
+      kandydat <- cell
+    }
+  }
+}
+
+degree <- 2:7
+df <- as.data.frame(matrix(NA, nrow=1, ncol=length(degree)))
+rownames(df) <- "Dokładność"
+colnames(df) <- as.character(degree)
+
+K <- 10
+for(d in degree){
+  
+  accuracy <- 0
+  
+  for(i in seq_len(K)){
+    
+    id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3))
+    train.set <- wine[id.learn, ]
+    test.set <- wine[-id.learn, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "polynomial",
+               degree = d, gamma = best_gamma, cost = best_C)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  
+  }
+  
+  df[1, as.character(d)] <- round(accuracy/K*100, 2)
+
+}
+```
+
+Najlepsza gamma: **`r best_gamma`**, najlepsza kara: **`r best_C`**.
+
+Badamy tylko na podstawie wielokrotnego podziału, bo tak i chuj.
+
+```{r}
+kable(df,
+      caption = "Badanie wpływu stopnia wielomianu na dokładność - wielokrotny podział, najbardziej dokładna kombinacja gamy i kary dla opcji default (stopień 3")
+```
+
+### Jądro radialne
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(kernel="radial"),
+      caption = "Jądro radialne - wielokrotny podział")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(kernel="radial"),
+      caption = "Jądro radialne - cross-validation")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(kernel="radial"),
+      caption = "Jądro radialne - bootstrap")
+```
+
+### Jądro sigmoidalne
+
+```{r, cache = TRUE}
+kable(kernel.type(kernel="sigmoid"),
+      caption = "Jądro sigmoidalne - wielokrotny podział")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(kernel="sigmoid"),
+      caption = "Jądro sigmoidalne - cross-validation")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(kernel="sigmoid"),
+      caption = "Jądro sigmoidalne - bootstrap")
+```
+
+elo
