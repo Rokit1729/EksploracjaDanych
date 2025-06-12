@@ -50,10 +50,15 @@ library(HDclassif)
 library(e1071)
 library(knitr)
 library(kableExtra)
+library(stats)
+library(clue)
+library(cluster)
 
 start <- Sys.time()
 
 data(wine)
+data(Glass)
+
 set.seed(21370)
 ```
 
@@ -120,11 +125,11 @@ colnames(wine) <- c(
 wine$Gatunek <- as.factor(wine$Gatunek)
 wine$Magnez <- as.numeric(wine$Magnez)
 wine$Prolina <- as.numeric(wine$Prolina)
+
+col <- sapply(wine, is.numeric)
+wine_scaled <- wine
+wine_scaled[col] <- scale(wine[col])
 ```
-
-### k-NN
-
-### Naiwny klasyfikator bayesowski
 
 ### Drzewa klasyfikacyjne
 
@@ -182,10 +187,13 @@ rownames(matrix) <- c("Bagging", "Random Forest", "Boosting", "Średnia")
 ```{r}
 kable(matrix,
   caption = "Średnia poprawa dokładności klasyfikacji za pomocą drzewa klasyfikacyjnego, z podziałem na algorytmy uczenia zespołowego oraz liczbę replikacji", 
-  digits = 2)
+  digits = 2) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
-## Gówno
+## Metoda wektorów nośnych (SVM)
 
 W tej części przeprowadzona będzie klasyfikacja na podstawie metody wektorów nośnych, z podziałem na różne funkcje jądrowe.
 
@@ -199,7 +207,8 @@ gamma <- round(seq(from = .01, to = 10, length.out = 10), 2)
 #NIE działają dla kernel = "linear"
 
 #Wielokrotny podział
-kernel.type <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
+kernel.type <- function(K = 10, size = 2/3,
+                        scale = FALSE, kernel){
   
   df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
   
@@ -215,9 +224,16 @@ kernel.type <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
       for(i in 1:K){
         
         id.learn <- sample(seq_len(nrow(wine)),
-                           size = floor(nrow(wine) * size1))
-        train.set <- wine[id.learn, ]
-        test.set <- wine[-id.learn, ]
+                           size = floor(nrow(wine) * size))
+        
+        if(scale==TRUE){
+          train.set <- wine_scaled[id.learn, ]
+          test.set <- wine_scaled[-id.learn, ]
+        }
+        else{
+          train.set <- wine[id.learn, ]
+          test.set <- wine[-id.learn, ]
+        }
         
         svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
                    gamma = g, cost = c)
@@ -228,7 +244,7 @@ kernel.type <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
         accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
       }
       
-      df[as.character(c), as.character(g)] <- round(accuracy/K*100, 2)
+      df[as.character(c), as.character(g)] <- accuracy/K*100
     
     }
   }
@@ -237,7 +253,7 @@ kernel.type <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
 }
 
 #Cross-validation
-kernel.type.cv <- function(C1 = C, gamma1 = gamma,  K = 10, kernel){
+kernel.type.cv <- function(K = 10, scale = FALSE, kernel){
   
   df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
   
@@ -254,9 +270,14 @@ kernel.type.cv <- function(C1 = C, gamma1 = gamma,  K = 10, kernel){
       
       for(i in 1:K){
         
-        train.set <- wine[folds != i, ]
-        test.set <- wine[folds == i, ]
-        
+        if(scale == TRUE){
+          train.set <- wine_scaled[folds != i, ]
+          test.set <- wine_scaled[folds == i, ]
+        }
+        else{
+          train.set <- wine[folds != i, ]
+          test.set <- wine[folds == i, ]
+        }
         svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
                    gamma = g, cost = c)
         
@@ -266,7 +287,7 @@ kernel.type.cv <- function(C1 = C, gamma1 = gamma,  K = 10, kernel){
         accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
       }
       
-      df[as.character(c), as.character(g)] <- round(accuracy/K*100, 2)
+      df[as.character(c), as.character(g)] <- accuracy/K*100
     
     }
   }
@@ -275,7 +296,7 @@ kernel.type.cv <- function(C1 = C, gamma1 = gamma,  K = 10, kernel){
 }
 
 #Bootstrap
-kernel.type.bs <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel){
+kernel.type.bs <- function(K = 10, size = 2/3, scale = FALSE, kernel){
   
   df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
   
@@ -291,10 +312,17 @@ kernel.type.bs <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel)
       for(i in 1:K){
         
         id.learn <- sample(seq_len(nrow(wine)),
-                           size = floor(nrow(wine) * size1),
+                           size = floor(nrow(wine) * size),
                            replace = TRUE)
-        train.set <- wine[id.learn, ]
-        test.set <- wine[-id.learn, ]
+        
+        if(scale == TRUE){
+          train.set <- wine_scaled[id.learn, ]
+          test.set <- wine_scaled[-id.learn, ]
+        }
+        else{
+          train.set <- wine[id.learn, ]
+          test.set <- wine[-id.learn, ]
+        }
         
         svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
                    gamma = g, cost = c)
@@ -305,7 +333,7 @@ kernel.type.bs <- function(C1 = C, gamma1 = gamma,  K = 10, size1 = 2/3, kernel)
         accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
       }
       
-      df[as.character(c), as.character(g)] <- round(accuracy/K*100, 2)
+      df[as.character(c), as.character(g)] <- accuracy/K*100
     
     }
   }
@@ -342,7 +370,7 @@ for(c in C){
     accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
   }
   
-  df[1, col] <- round(accuracy/K*100, 2)
+  df[1, col] <- accuracy/K*100
 }
 
 #Cross-validation
@@ -367,7 +395,7 @@ for(c in C){
     accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
   }
   
-  df[2, col] <- round(accuracy/K*100, 2)
+  df[2, col] <- accuracy/K*100
 }
 
 #Bootstrap
@@ -382,6 +410,7 @@ for(c in C){
     
     id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3),
                        replace = TRUE)
+
     train.set <- wine[id.learn, ]
     test.set <- wine[-id.learn, ]
     
@@ -393,7 +422,7 @@ for(c in C){
     accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
   }
   
-  df[3, col] <- round(accuracy/K*100, 2)
+  df[3, col] <- accuracy/K*100
 }
 
 df <- rbind(df, colMeans(df))
@@ -406,26 +435,159 @@ colnames(df) <- as.character(C)
 ```
 
 ```{r}
-kable(df, caption = "Jądro liniowe")
+kable(df, caption = "Jądro liniowe - bez skalowania", digits = 2) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+
+df <- matrix(NA, nrow = 3, ncol = length(C))
+
+#Wielokrotny podział
+col <- 0
+for(c in C){
+  
+  col <- col + 1
+  
+  accuracy <- 0
+  for(i in seq_len(K)){
+    
+    id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3))
+    
+    train.set <- wine_scaled[id.learn, ]
+    test.set <- wine_scaled[-id.learn, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "linear", cost = c)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  }
+  
+  df[1, col] <- accuracy/K*100
+}
+
+#Cross-validation
+folds <- sample(rep(seq_len(K), length.out = nrow(wine)))
+col <- 0
+
+for(c in C){
+  
+  col <- col + 1
+  
+  accuracy <- 0
+  for(i in seq_len(K)){
+    
+    train.set <- wine_scaled[folds == i, ]
+    test.set <- wine_scaled[folds != i, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "linear", cost = c)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  }
+  
+  df[2, col] <- accuracy/K*100
+}
+
+#Bootstrap
+col <- 0
+
+for(c in C){
+  
+  col <- col + 1
+  
+  accuracy <- 0
+  for(i in seq_len(K)){
+    
+    id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3),
+                       replace = TRUE)
+    
+    train.set <- wine_scaled[id.learn, ]
+    test.set <- wine_scaled[-id.learn, ]
+    
+    svm <- svm(Gatunek ~ ., data=train.set, kernel = "linear", cost = c)
+    
+    prediction <- predict(svm, newdata=test.set)
+    prediction <- table(prediction, test.set$Gatunek)
+    
+    accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+  }
+  
+  df[3, col] <- accuracy/K*100
+}
+
+df <- rbind(df, colMeans(df))
+df <- as.data.frame(df)
+rownames(df) <- c("Wielokrotny podział",
+                  "Cross-validation",
+                  "Bootstrap",
+                  "Średnio")
+colnames(df) <- as.character(C)
+```
+
+```{r}
+kable(df, caption = "Jądro liniowe - ze skalowaniem", digits = 2) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ### Jądro wielomianowe
 
 ```{r, cache = TRUE}
-dataFrame <- kernel.type(kernel="polynomial")
-
-kable(dataFrame,
-      caption = "Jądro wielomianowe - wielokrotny podział")
+kable(kernel.type(kernel="polynomial"), digits = 2,
+      caption = "Jądro wielomianowe - wielokrotny podział, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
-kable(kernel.type.cv(kernel="polynomial"),
-      caption = "Jądro wielomianowe - cross-validation")
+dataFrame <- kernel.type(scale = TRUE, kernel="polynomial")
+
+kable(dataFrame, digits = 2,
+      caption = "Jądro wielomianowe - wielokrotny podział, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
-kable(kernel.type.bs(kernel="polynomial"),
-      caption = "Jądro wielomianowe - bootstrap")
+kable(kernel.type.cv(kernel="polynomial"), digits = 2,
+      caption = "Jądro wielomianowe - cross-validation, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(scale = TRUE, kernel="polynomial"), digits = 2,
+      caption = "Jądro wielomianowe - cross-validation, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(kernel="polynomial"), digits = 2,
+      caption = "Jądro wielomianowe - bootstrap, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(scale = TRUE, kernel="polynomial"), digits = 2,
+      caption = "Jądro wielomianowe - bootstrap, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
@@ -457,8 +619,8 @@ for(d in degree){
   for(i in seq_len(K)){
     
     id.learn <- sample(seq_len(nrow(wine)), size = floor(nrow(wine) * 2/3))
-    train.set <- wine[id.learn, ]
-    test.set <- wine[-id.learn, ]
+    train.set <- wine_scaled[id.learn, ]
+    test.set <- wine_scaled[-id.learn, ]
     
     svm <- svm(Gatunek ~ ., data=train.set, kernel = "polynomial",
                degree = d, gamma = best_gamma, cost = best_C)
@@ -470,52 +632,247 @@ for(d in degree){
   
   }
   
-  df[1, as.character(d)] <- round(accuracy/K*100, 2)
+  df[1, as.character(d)] <- accuracy/K*100
 
 }
 ```
 
-Najlepsza gamma: **`r best_gamma`**, najlepsza kara: **`r best_C`**.
+Najlepsza gamma: **`r best_gamma`**, najlepsza kara: **`r best_C`**. Robimy dla danych po standaryzacji, bo tak i chuj.
 
-Badamy tylko na podstawie wielokrotnego podziału, bo tak i chuj.
+Badamy tylko na podstawie wielokrotnego podziału, bo tak i chuj również.
 
 ```{r}
-kable(df,
-      caption = "Badanie wpływu stopnia wielomianu na dokładność - wielokrotny podział, najbardziej dokładna kombinacja gamy i kary dla opcji default (stopień 3")
+kable(df, digits = 2,
+      caption = "Badanie wpływu stopnia wielomianu na dokładność - wielokrotny podział, najbardziej dokładna kombinacja gammy i kary dla opcji default (stopień 3")
 ```
 
 ### Jądro radialne
 
 ```{r, cache = TRUE}
-kable(kernel.type.cv(kernel="radial"),
-      caption = "Jądro radialne - wielokrotny podział")
+kable(kernel.type.cv(kernel="radial"), digits = 2,
+      caption = "Jądro radialne - wielokrotny podział, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
-kable(kernel.type.cv(kernel="radial"),
-      caption = "Jądro radialne - cross-validation")
+kable(kernel.type.cv(scale = TRUE, kernel="radial"), digits = 2,
+      caption = "Jądro radialne - wielokrotny podział, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
-kable(kernel.type.bs(kernel="radial"),
-      caption = "Jądro radialne - bootstrap")
+kable(kernel.type.cv(kernel="radial"), digits = 2,
+      caption = "Jądro radialne - cross-validation, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(scale = TRUE, kernel="radial"), digits = 2,
+      caption = "Jądro radialne - cross-validation, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(kernel="radial"), digits = 2,
+      caption = "Jądro radialne - bootstrap, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(scale= TRUE, kernel="radial"), digits = 2,
+      caption = "Jądro radialne - bootstrap, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ### Jądro sigmoidalne
 
 ```{r, cache = TRUE}
-kable(kernel.type(kernel="sigmoid"),
-      caption = "Jądro sigmoidalne - wielokrotny podział")
+kable(kernel.type(kernel="sigmoid"), digits = 2,
+      caption = "Jądro sigmoidalne - wielokrotny podział, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
-kable(kernel.type.cv(kernel="sigmoid"),
-      caption = "Jądro sigmoidalne - cross-validation")
+kable(kernel.type(scale = TRUE, kernel="sigmoid"), digits = 2,
+      caption = "Jądro sigmoidalne - wielokrotny podział, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r, cache = TRUE}
-kable(kernel.type.bs(kernel="sigmoid"),
-      caption = "Jądro sigmoidalne - bootstrap")
+kable(kernel.type.cv(kernel="sigmoid"), digits = 2,
+      caption = "Jądro sigmoidalne - cross-validation, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.cv(scale = TRUE, kernel="sigmoid"), digits = 2,
+      caption = "Jądro sigmoidalne - cross-validation, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(kernel="sigmoid"), digits = 2,
+      caption = "Jądro sigmoidalne - bootstrap, bez skalowania") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+```{r, cache = TRUE}
+kable(kernel.type.bs(scale = TRUE, kernel="sigmoid"), digits = 2,
+      caption = "Jądro sigmoidalne - bootstrap, ze skalowaniem") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 elo
+
+# Analiza skupień – algorytmy grupujące i hierarchiczne
+
+W pierwszej części zadania zastosujemy algorytmy *ensemble learning* (bagging,
+boosting i random forest) w celu poprawy dokładności cech klasyfikacyjnych. W drugiej natomiast poznamy i ocenimy nową metodę klasyfikacji - metodę wektorów nośnych (SVM).
+
+Zadanie zostanie wykonane na zbiorze danych *wine*, którego szczegółowy opis znajduje się w poprzednim raporcie.
+
+W tym zadaniu zastosujemy i porównamy ze sobą metody analizy skupień - k-średnich i PAM jako algorytmy grupujące, oraz AGNES - algorytm hierarhiczny.
+
+## Zbiór danych Glass
+
+Chujowy
+
+```{r, fig.cap="Wykres pudełkowy, zmienne bez standaryzacji"}
+boxplot(Glass[-10], las=2, col="tomato")
+```
+
+KURWA STANDARYZACJA MACHEN
+
+```{r, fig.cap="Wykres pudełkowe, po standaryzacji"}
+Glass[-10] <- scale(Glass[-10])
+glass <- Glass[-10]
+
+k <- length(levels(Glass$Type))
+
+boxplot(glass, las=2, col="tomato") #Teraz zajebiście
+```
+
+Teraz jest zajebiście
+
+```{r, fig.cap="Wizualizacja danych, PCA"}
+pca_result <- prcomp(glass)
+pca_summary <- summary(pca_result)$importance
+
+xlab1 <- paste0("PC1 (", round(pca_summary[2, 1]*100, 2), "%)")
+ylab1 <- paste0("PC2 (", round(pca_summary[2, 2]*100, 2), "%)")
+
+plot(pca_result$x[, 1], pca_result$x[, 2],
+     xlab = xlab1, ylab = ylab1,
+     col = Glass$Type)
+```
+
+Chuja widać, ciekawe kto wybrał ten zbiór?
+
+## Wyniki grupowania
+
+Przeprowadzamy dla rzeczywistej liczby etykiet, która wynosi **`r k`**.
+
+### k-średnie
+
+```{r, fig.cap="PCA, kolory - rzeczywiste, kształt - wyniki"}
+kmeans.k3 <- kmeans(glass, centers = k, iter.max = 10)
+wyniki <- kmeans.k3$cluster
+
+plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
+     col = Glass$Type, pch = wyniki)
+```
+
+Gównianie mu poszło
+
+```{r, fig.cap="Wykres RI od Na, aby pokazać gdzie są wyznaczone centra skupień"}
+plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
+     col = Glass$Type, pch = wyniki)
+points(kmeans.k3$centers[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
+```
+
+Centra wywalone w kosmos, ale fajnie
+
+```{r}
+conf_mat <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(conf_mat, maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(conf_mat) <- as.character(c(1:3, 5:7))
+colnames(conf_mat) <- as.character(c(1:3, 5:7))
+
+kable(conf_mat, caption = "Macierz błędów; metoda k-średnich")
+```
+
+Dokładność: `r round(sum(diag(conf_mat))/sum(conf_mat)*100, 2)`%.
+
+### Partitioning Around Medoids (PAM)
+
+```{r, fig.cap="coś"}
+conf_mat <- daisy(glass)
+
+glass.pam7 <- pam(x=conf_mat, diss=TRUE, k=k)
+
+wyniki <- glass.pam7$clustering
+
+plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
+     col = wyniki, pch = as.numeric(Glass$Type))
+```
+
+Też słabo
+
+```{r, fig.cap="coś, z medoidami"}
+medoids <- glass[glass.pam7$id.med, ]
+
+plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
+     col = wyniki, pch = as.numeric(Glass$Type))
+points(medoids[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
+```
+
+Meh
+
+```{r}
+conf_mat <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(conf_mat, maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(conf_mat) <- as.character(c(1:3, 5:7))
+colnames(conf_mat) <- as.character(c(1:3, 5:7))
+
+kable(conf_mat, caption = "Macierz błędów; metoda k-średnich")
+```
+
+Dokładność: `r round(sum(diag(conf_mat))/sum(conf_mat)*100, 2)`%.
+
+Gorzej niż k-średnie *shocked emoji*.
+
+### Agglomerative Nesting (AGNES)
