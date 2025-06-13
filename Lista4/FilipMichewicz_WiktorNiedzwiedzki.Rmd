@@ -54,13 +54,15 @@ library(stats)
 library(clue)
 library(cluster)
 library(factoextra)
+library(clValid)
 
 start <- Sys.time()
 
 data(wine)
 data(Glass)
+Glass.copy <- Glass
 
-set.seed(213)
+set.seed(21370)
 ```
 
 ```{r metryki}
@@ -750,6 +752,10 @@ kable(kernel.type.bs(scale = TRUE, kernel="sigmoid"), digits = 2,
 
 elo
 
+## Wnioski
+
+e
+
 # Analiza skupień – algorytmy grupujące i hierarchiczne
 
 W pierwszej części zadania zastosujemy algorytmy *ensemble learning* (bagging,
@@ -823,25 +829,29 @@ matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix, maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-matrix  <- table(wyniki, Glass$Type)
-rownames(matrix ) <- as.character(c(1:3, 5:7))
-colnames(matrix ) <- as.character(c(1:3, 5:7))
+matrix  <- table(wyniki1, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
 
 kable(matrix , caption = "Macierz błędów; metoda k-średnich")
 ```
 
-Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+Dokładność (macierz): `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
 
 ### Partitioning Around Medoids (PAM)
 
 ```{r, fig.cap="coś"}
 glass.conf_mat <- daisy(glass)
 
-glass.pam7 <- pam(x=conf_mat, diss=TRUE, k=k)
+glass.pam7 <- pam(x=glass.conf_mat, diss=TRUE, k=k)
 
 wyniki <- glass.pam7$clustering
+
+Glass.copy$PAM <- wyniki
 
 plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
      col = wyniki, pch = as.numeric(Glass$Type))
@@ -860,13 +870,17 @@ points(medoids[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
 Meh
 
 ```{r}
+kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów, k=6")
+```
+
+```{r}
 matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix , maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
+conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
@@ -875,11 +889,15 @@ kable(matrix, caption = "Macierz błędów; metoda k-średnich")
 
 Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+
 Gorzej niż k-średnie *shocked emoji*.
 
 ### Agglomerative Nesting (AGNES)
 
 #### Najbliższy sąsiad
+
+\newpage
 
 ```{r, fig.cap="AGNES: single linkage"}
 glass.agnes.single <- agnes(x = glass.conf_mat,
@@ -896,9 +914,9 @@ matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix , maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
+conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
@@ -907,7 +925,11 @@ kable(matrix, caption = "Macierz błędów; agnes, najbliższy sąsiad")
 
 Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+
 #### Najdalszy sąsiad
+
+\newpage
 
 ```{r, fig.cap="AGNES: complete linkage"}
 glass.agnes.complete <- agnes(x = glass.conf_mat,
@@ -924,9 +946,9 @@ matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix , maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
+conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
@@ -935,7 +957,11 @@ kable(matrix, caption = "Macierz błędów; agnes, najdalszy sąsiad")
 
 Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+
 #### Średnia odległość
+
+\newpage
 
 ```{r, fig.cap="AGNES: average linkage"}
 glass.agnes.average <- agnes(x = glass.conf_mat,
@@ -952,9 +978,9 @@ matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix , maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
+conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
@@ -963,9 +989,13 @@ kable(matrix, caption = "Macierz błędów; agnes, średnia odległość")
 
 Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+
 ### Divisive clustering (DIANA)
 
 #### Odległość euklidesowa
+
+\newpage
 
 ```{r, fig.cap="AGNES: average linkage"}
 glass.agnes.euclidean <- diana(x = glass.conf_mat,
@@ -982,9 +1012,9 @@ matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix , maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
+conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
@@ -993,7 +1023,11 @@ kable(matrix, caption = "Macierz błędów; agnes, średnia odległość")
 
 Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+
 #### Odległość Manhattan (taksówkowa)
+
+\newpage
 
 ```{r, fig.cap="AGNES: average linkage"}
 glass.agnes.manhattan <- diana(x = glass.conf_mat,
@@ -1010,9 +1044,9 @@ matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
 mapping <- solve_LSAP(matrix , maximum = TRUE)
-wyniki <- mapping[wyniki]
+wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
+conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
@@ -1020,3 +1054,225 @@ kable(matrix, caption = "Macierz błędów; agnes, średnia odległość")
 ```
 
 Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+
+Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+
+## Ocena jakości grupowania i wizualizacja najlepszych wyników
+
+### Ocena
+
+Legenda:
+
+* 1 - kmeans,
+* 2 - PAM,
+* 3 - AGNES,
+* 4 - DIANA.
+
+```{r, fig.cap="coś"}
+metody <- c("kmeans", "pam", "agnes", "diana")
+K.zakres <- 2:k
+
+internal.validation <- clValid(glass,
+                               nClust = K.zakres,
+                               clMethods = metody,
+                               validation = "internal")
+
+measures <- internal.validation@measures
+
+#Silhouette
+silhouette <- data.frame("Kmeans" = measures[3, , 1],
+                         "PAM" = measures[3, , 2],
+                         "AGNES" = measures[3, , 3],
+                         "DIANA" = measures[3, , 4],
+                         "K" = 2:k)
+
+#Connectivity
+connectivity <- data.frame("Kmeans" = measures[1, , 1],
+                           "PAM" = measures[1, , 2],
+                           "AGNES" = measures[1, , 3],
+                           "DIANA" = measures[1, , 4],
+                           "K" = 2:k)
+
+#Dunn
+dunn <- data.frame("Kmeans" = measures[2, , 1],
+                   "PAM" = measures[2, , 2],
+                   "AGNES" = measures[2, , 3],
+                   "DIANA" = measures[2, , 4],
+                   "K" = 2:k)
+```
+
+```{r, fig.cap="Connectivity"}
+max <- max(connectivity[-5])
+
+plot(connectivity$K, connectivity$Kmeans,
+     type = "b", lty = 1, col = 1, lwd = 2,  pch=paste(1),
+     xlab = "Liczba skupień", ylab = "Wskaźnik connectivity",
+     ylim = c(0, max), las=1)
+
+for(i in 2:4){
+  lines(connectivity$K, as.vector(connectivity[, i]),
+        type = "b", lty = i, col = i, lwd = 2, pch=paste(i))
+}
+
+legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
+```
+
+Connectivity - im mniejszy, tym lepszy:
+
+* kmeans - 2,
+* PAM - 2,
+* AGNES - 2 (najlepszy),
+* DIANA - 3.
+
+```{r, fig.cap="Dunn"}
+max <- max(dunn[-5])
+
+plot(dunn$K, dunn$Kmeans,
+     type = "b", lty = 1, col = 1, lwd = 2,  pch=paste(1),
+     xlab = "Liczba skupień", ylab = "Wskaźnik Dunn'a",
+     ylim = c(0, max), las=1)
+
+for(i in 2:4){
+  lines(dunn$K, as.vector(dunn[, i]),
+        type = "b", lty = i, col = i, lwd = 2, pch=paste(i))
+}
+
+legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
+```
+
+Dunn - im większy, tym lepszy:
+
+* kmeans - 2,
+* PAM - 2,
+* AGNES - 2 (najlepszy),
+* DIANA - 3.
+
+```{r, fig.cap="Silhouette"}
+plot(silhouette$K, silhouette$Kmeans,
+     type = "b", lty = 1, col = 1, lwd = 2,  pch=paste(1),
+     xlab = "Liczba skupień", ylab = "Indeks silhouette",
+     ylim = c(0, 1), las=1)
+
+for(i in 2:4){
+  lines(silhouette$K, as.vector(silhouette[, i]),
+        type = "b", lty = i, col = i, lwd = 2, pch=paste(i))
+}
+
+legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
+```
+
+Dunn - im większy, tym lepszy:
+
+* kmeans - 2,
+* PAM - 2,
+* AGNES - 2 (najlepszy),
+* DIANA - 2.
+
+### Wizualizacja
+
+#### k-średnie
+
+\newpage
+
+```{r, fig.cap="PCA, kolory - rzeczywiste, kształt - wyniki, k=2"}
+kmeans.k3 <- kmeans(glass, centers = 2, iter.max = 10)
+wyniki <- kmeans.k3$cluster
+
+plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
+     pch = wyniki+1, col = wyniki)
+```
+
+Gównianie mu poszło
+
+```{r, fig.cap="Wykres RI od Na, aby pokazać gdzie są wyznaczone centra skupień, k=2"}
+plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na", pch = wyniki+1,
+     col = wyniki)
+points(kmeans.k3$centers[,c("RI", "Na")], pch = 16, cex = 1.5, col = 1:2)
+```
+
+Centra wywalone w kosmos, ale fajnie
+
+Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+
+#### PAM
+
+\newpage
+
+```{r, fig.cap="coś, k=2"}
+glass.pam7 <- pam(x=glass.conf_mat, diss=TRUE, k=2)
+
+wyniki <- glass.pam7$clustering
+
+Glass.copy$PAM <- wyniki
+
+plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
+     col = wyniki, pch = wyniki+1)
+```
+
+Też słabo
+
+```{r, fig.cap="coś, z medoidami, k=2"}
+medoids <- glass[glass.pam7$id.med, ]
+
+plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
+     col = wyniki, pch = wyniki+1)
+points(medoids[,c("RI", "Na")], pch = 16, cex = 1.5, col = 1:2)
+```
+
+Meh
+
+Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+
+```{r}
+kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów, k=2")
+```
+
+#### AGNES
+
+\newpage
+
+```{r, fig.cap="AGNES: complete linage, k=2"}
+glass.agnes.complete <- agnes(x = glass.conf_mat,
+                              diss = TRUE,
+                              method = "complete")
+
+fviz_dend(glass.agnes.complete, cex=0.4, k = 2)
+
+wyniki <- cutree(glass.agnes.single, k = 2)
+```
+
+Tylko dla najdalszych sąsiadów, bo dał najlepsze wyniki.
+
+Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+
+#### DIANA
+
+\newpage
+
+```{r, fig.cap="DIANA, k=3"}
+glass.agnes.euclidean <- diana(x = glass.conf_mat,
+                            diss = TRUE,
+                            metric = "euclidean")
+
+fviz_dend(glass.agnes.euclidean, cex=0.4, k = 3)
+
+wyniki <- cutree(glass.agnes.euclidean, k = 3)
+```
+
+Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+
+## Wnioski
+
+# Podsumowanie
+
+```{r}
+end = Sys.time()
+spend = end - start
+
+total_seconds = as.numeric(spend, units = "secs")
+
+minutes = floor(total_seconds / 60)
+seconds = floor(total_seconds %% 60)
+```
+
+PS. Czas wykonywania kodu wynosi `r minutes` minut i `r seconds` sekund.

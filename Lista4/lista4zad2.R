@@ -3,6 +3,9 @@ library(stats)
 library(factoextra)
 library(cluster)
 library(clue)
+library(knitr)
+library(clValid)
+library(e1071)
 
 data(Glass)
 
@@ -23,6 +26,7 @@ max(Glass[-10])
 
 boxplot(Glass[-10], las=2, col="tomato") #KURWA SKALOWANIE MACHENNNNNNN
 
+Glass.copy <- Glass
 Glass[-10] <- scale(Glass[-10])
 glass <- Glass[-10]
 
@@ -61,8 +65,10 @@ conf_mat <- daisy(glass)
 #fviz_dist(conf_mat, order = TRUE)
 #Macierz odmienności, po uporządkowaniu
 
-glass.pam7 <- pam(x=conf_mat, diss=TRUE, k=k)
-
+glass.pam7 <- pam(x=conf_mat, diss=TRUE, k=3)
+glass.pam7$medoids
+medoids <- Glass[glass.pam7$id.med, ]
+View(medoids)
 wyniki <- glass.pam7$clustering
 
 plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
@@ -86,6 +92,22 @@ rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
 kable(matrix, caption = "Macierz błędów; metoda k-średnich")
+
+#Jeszcze inaczej
+wyniki <- glass.pam7$clustering
+wyniki
+(tab <- table(wyniki, Glass$Type))
+
+# miary zgodności partycji
+matchClasses(tab)
+compareMatchedClasses(wyniki, Glass$Type)$diag
+
+# Wymuszamy, aby każde skupienie było przypisane do innej klasy
+matchClasses(tab, method="exact")
+compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag
+
+#Tutaj jednak nie zmienia kolejności wierszy = nie ma sensu wyświetlać
+
 ##################################################################################################3
 #AGNES
 
@@ -100,3 +122,42 @@ fviz_dend(glass.agnes.single, cex=0.4, k = k)
 glass.agnes.avg.k6 <- cutree(glass.agnes.single, k = 6)
 a <- table(glass.agnes.avg.k6, Glass$Type)
 a
+
+##################################################################################################3
+#OCENA
+
+metody <- c("kmeans", "pam", "agnes", "diana")
+K.zakres <- 2:k
+
+internal.validation <- clValid(glass,
+                               nClust = K.zakres,
+                               clMethods = metody,
+                               validation = "internal")
+View(internal.validation)
+summary(internal.validation)
+optimalScores(internal.validation)
+
+par(mfrow = c(2, 2))
+plot(internal.validation, lwd = 2, legend = FALSE)
+plot.new()
+legend("center", clusterMethods(internal.validation), col=1:4, lty=1:4, pch=paste(1:4), cex=0.8)
+
+a <- internal.validation@measures
+View(a)
+a[, , 3]
+a
+Connectivity <- data.frame("Kmeans" = a[2, , 1],
+                           "PAM" = a[2, , 2],
+                           "AGNES" = a[2, , 3],
+                           "DIANA" = a[2, , 4],
+                           "K" = 2:k)
+View(Connectivity)
+max
+max <- max(Connectivity)
+plot(Connectivity$K, Connectivity$Kmeans, pch=paste(1),
+      ylim = c(0, max), type = "b", lty = 1, col = 1, las=1)
+for(i in 2:4){
+  lines(Connectivity$K, as.vector(Connectivity[, i]), col = i, lwd = 2, type = "b", pch=paste(i))
+}
+
+legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
