@@ -53,13 +53,14 @@ library(kableExtra)
 library(stats)
 library(clue)
 library(cluster)
+library(factoextra)
 
 start <- Sys.time()
 
 data(wine)
 data(Glass)
 
-set.seed(21370)
+set.seed(213)
 ```
 
 ```{r metryki}
@@ -278,6 +279,7 @@ kernel.type.cv <- function(K = 10, scale = FALSE, kernel){
           train.set <- wine[folds != i, ]
           test.set <- wine[folds == i, ]
         }
+        
         svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
                    gamma = g, cost = c)
         
@@ -817,25 +819,25 @@ points(kmeans.k3$centers[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
 Centra wywalone w kosmos, ale fajnie
 
 ```{r}
-conf_mat <- table(wyniki, Glass$Type)
+matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
-mapping <- solve_LSAP(conf_mat, maximum = TRUE)
+mapping <- solve_LSAP(matrix, maximum = TRUE)
 wyniki <- mapping[wyniki]
 
-conf_mat <- table(wyniki, Glass$Type)
-rownames(conf_mat) <- as.character(c(1:3, 5:7))
-colnames(conf_mat) <- as.character(c(1:3, 5:7))
+matrix  <- table(wyniki, Glass$Type)
+rownames(matrix ) <- as.character(c(1:3, 5:7))
+colnames(matrix ) <- as.character(c(1:3, 5:7))
 
-kable(conf_mat, caption = "Macierz błędów; metoda k-średnich")
+kable(matrix , caption = "Macierz błędów; metoda k-średnich")
 ```
 
-Dokładność: `r round(sum(diag(conf_mat))/sum(conf_mat)*100, 2)`%.
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
 ### Partitioning Around Medoids (PAM)
 
 ```{r, fig.cap="coś"}
-conf_mat <- daisy(glass)
+glass.conf_mat <- daisy(glass)
 
 glass.pam7 <- pam(x=conf_mat, diss=TRUE, k=k)
 
@@ -858,21 +860,163 @@ points(medoids[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
 Meh
 
 ```{r}
-conf_mat <- table(wyniki, Glass$Type)
+matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
-mapping <- solve_LSAP(conf_mat, maximum = TRUE)
+mapping <- solve_LSAP(matrix , maximum = TRUE)
 wyniki <- mapping[wyniki]
 
 conf_mat <- table(wyniki, Glass$Type)
-rownames(conf_mat) <- as.character(c(1:3, 5:7))
-colnames(conf_mat) <- as.character(c(1:3, 5:7))
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
 
-kable(conf_mat, caption = "Macierz błędów; metoda k-średnich")
+kable(matrix, caption = "Macierz błędów; metoda k-średnich")
 ```
 
-Dokładność: `r round(sum(diag(conf_mat))/sum(conf_mat)*100, 2)`%.
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
 
 Gorzej niż k-średnie *shocked emoji*.
 
 ### Agglomerative Nesting (AGNES)
+
+#### Najbliższy sąsiad
+
+```{r, fig.cap="AGNES: single linkage"}
+glass.agnes.single <- agnes(x = glass.conf_mat,
+                            diss = TRUE,
+                            method = "single")
+
+fviz_dend(glass.agnes.single, cex=0.4, k = k)
+```
+
+```{r}
+wyniki <- cutree(glass.agnes.single, k = k)
+
+matrix <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(matrix , maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
+
+kable(matrix, caption = "Macierz błędów; agnes, najbliższy sąsiad")
+```
+
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+
+#### Najdalszy sąsiad
+
+```{r, fig.cap="AGNES: complete linkage"}
+glass.agnes.complete <- agnes(x = glass.conf_mat,
+                            diss = TRUE,
+                            method = "complete")
+
+fviz_dend(glass.agnes.complete, cex=0.4, k = k)
+```
+
+```{r}
+wyniki <- cutree(glass.agnes.complete, k = k)
+
+matrix <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(matrix , maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
+
+kable(matrix, caption = "Macierz błędów; agnes, najdalszy sąsiad")
+```
+
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+
+#### Średnia odległość
+
+```{r, fig.cap="AGNES: average linkage"}
+glass.agnes.average <- agnes(x = glass.conf_mat,
+                            diss = TRUE,
+                            method = "average")
+
+fviz_dend(glass.agnes.average, cex=0.4, k = k)
+```
+
+```{r}
+wyniki <- cutree(glass.agnes.average, k = k)
+
+matrix <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(matrix , maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
+
+kable(matrix, caption = "Macierz błędów; agnes, średnia odległość")
+```
+
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+
+### Divisive clustering (DIANA)
+
+#### Odległość euklidesowa
+
+```{r, fig.cap="AGNES: average linkage"}
+glass.agnes.euclidean <- diana(x = glass.conf_mat,
+                            diss = TRUE,
+                            metric = "euclidean")
+
+fviz_dend(glass.agnes.euclidean, cex=0.4, k = k)
+```
+
+```{r}
+wyniki <- cutree(glass.agnes.euclidean, k = k)
+
+matrix <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(matrix , maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
+
+kable(matrix, caption = "Macierz błędów; agnes, średnia odległość")
+```
+
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+
+#### Odległość Manhattan (taksówkowa)
+
+```{r, fig.cap="AGNES: average linkage"}
+glass.agnes.manhattan <- diana(x = glass.conf_mat,
+                            diss = TRUE,
+                            metric = "manhattan")
+
+fviz_dend(glass.agnes.manhattan, cex=0.4, k = k)
+```
+
+```{r}
+wyniki <- cutree(glass.agnes.manhattan, k = k)
+
+matrix <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(matrix , maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
+
+kable(matrix, caption = "Macierz błędów; agnes, średnia odległość")
+```
+
+Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.

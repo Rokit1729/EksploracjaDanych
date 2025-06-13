@@ -73,3 +73,30 @@ medoids <- glass[glass.pam7$id.med, ]
 plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
      col = wyniki, pch = as.numeric(Glass$Type))
 points(medoids[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
+
+
+matrix <- table(wyniki, Glass$Type)
+
+#Najlepsze dopasowanie
+mapping <- solve_LSAP(matrix , maximum = TRUE)
+wyniki <- mapping[wyniki]
+
+conf_mat <- table(wyniki, Glass$Type)
+rownames(matrix) <- as.character(c(1:3, 5:7))
+colnames(matrix) <- as.character(c(1:3, 5:7))
+
+kable(matrix, caption = "Macierz błędów; metoda k-średnich")
+##################################################################################################3
+#AGNES
+
+conf_mat <- daisy(glass)
+
+glass.agnes.single <- agnes(x = conf_mat,
+                            diss=TRUE,
+                            method="single")
+
+fviz_dend(glass.agnes.single, cex=0.4, k = k)
+
+glass.agnes.avg.k6 <- cutree(glass.agnes.single, k = 6)
+a <- table(glass.agnes.avg.k6, Glass$Type)
+a
