@@ -101,7 +101,7 @@ kable(df_table,
 
 Sprawdzono częstość występowania poszczególnych wartości zmiennych klasyfikacyjnych. Wyniki zaprezentowano na Wykresie 1.
 
-```{r echo=TRUE, fig.cap="Częstości etykiet w zbiorze iris", cache = TRUE}
+```{r echo=TRUE, fig.cap="Częstości etykiet w zbiorze iris", cache=TRUE}
 etykiety <- iris$Species
 n <- length(etykiety)
 K <- length(unique(etykiety))
@@ -595,7 +595,7 @@ df_table <- data.frame(
   Opis = c(
     "Klasa (typ wina: 1, 2, 3)",
     "Zawartość alkoholu [%]",
-    "Kwas jabłkowy [g/l]",
+    "Kwas mlekowy [g/l]",
     "Zawartość popiołu [g/l]",
     "Zasadowość pozostałości popiołu",
     "Zawartość magnezu [mg/l]",
@@ -3133,7 +3133,7 @@ Najwyższy F1-score uzyskał **Naive Bayes** (97,29 %), nieznacznie przewyższaj
 
 Z wcześniejszych badań otrzymaliśmy, że najgorszą zdolność dyskryminacyjną otrzymaliśmy dla drzew, najlepsze zaś dla naiwnego Bayesa.
 
-Na Wykresie 12. widać czas działania najlepszych wersji metod do klasyfikacji. Widać że najszybciej radzi sobie k-NN, a jajdłużej Naiwny Bayes.
+Na Wykresie 12. widać czas działania najlepszych wersji metod do klasyfikacji. Widać że najszybciej radzi sobie k-NN, a najdłużej Naiwny Bayes.
 
 ```{r, cache=TRUE, echo=FALSE}
 n <- nrow(wine_scale)
