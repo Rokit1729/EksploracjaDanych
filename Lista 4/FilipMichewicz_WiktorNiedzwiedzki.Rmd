@@ -1127,17 +1127,31 @@ Oznacza to, że mimo poprawy, metoda PAM nie zapewnia jeszcze precyzyjnego rozr�
 
 ### Agglomerative Nesting (AGNES)
 
-#### Najbliższy sąsiad
+W tej części zastosowano algorytm **AGNES (Agglomerative Nesting)**, który reprezentuje podejście aglomeracyjne w hierarchicznej analizie skupień. Metoda ta rozpoczyna proces grupowania od traktowania każdej obserwacji jako osobnego klastra, a następnie iteracyjnie łączy najbliższe pary klastrów, aż do momentu, gdy wszystkie obserwacje znajdą się w jednej nadrzędnej strukturze. Efektem końcowym jest **dendrogram** — drzewo hierarchiczne ilustrujące kolejność i poziom łączenia poszczególnych elementów.
 
-\newpage
+Kluczowym aspektem działania AGNES jest sposób definiowania odległości między klastrami. W niniejszej analizie rozważano trzy popularne metody:
 
-```{r, fig.cap="AGNES: single linkage"}
+* **Najbliższy sąsiad (single linkage)** – odległość między klastrami jest definiowana jako najmniejsza odległość między dowolną parą punktów z różnych klastrów. Metoda ta może prowadzić do wydłużonych, łańcuchowatych klastrów i jest wrażliwa na szum.
+
+* **Najdalszy sąsiad (complete linkage)** – uwzględnia największą możliwą odległość między parami punktów z różnych klastrów, co skutkuje bardziej zwartymi i wyraźnie odseparowanymi grupami.
+
+* **Średnia odległość (average linkage)** – opiera się na średniej odległości pomiędzy wszystkimi punktami w dwóch klastrach. Stanowi kompromis między dwoma powyższymi podejściami, oferując stabilne i zrównoważone grupowanie.
+
+Dla każdej z metod dokonano cięcia dendrogramu na **`r k`** klastrów — odpowiadających rzeczywistej liczbie klas w zbiorze danych *glass* — co umożliwia porównanie wyników z etykietami klas i ocenę jakości odwzorowania struktury danych przez algorytm AGNES.
+
+#### Najbliższy sąsiad (*Single Linkage*)
+
+W tej części zastosowano metodę **najbliższego sąsiada** w ramach algorytmu AGNES.
+
+```{r, fig.cap="AGNES - najbliższy sąsiad"}
 glass.agnes.single <- agnes(x = glass.conf_mat,
                             diss = TRUE,
                             method = "single")
 
 fviz_dend(glass.agnes.single, cex=0.4, k = k)
 ```
+
+Na Wykresie 10. przedstawiono dendrogram otrzymany w wyniku działania algorytmu AGNES z zastosowaniem metody najbliższego sąsiada
 
 ```{r}
 wyniki <- cutree(glass.agnes.single, k = k)
@@ -1152,18 +1166,24 @@ conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
-kable(matrix, caption = "Macierz błędów; agnes, najbliższy sąsiad")
+kable(matrix, caption = "Macierz pomyłek - AGNES - najbliższy sąsiad") %>%
+  add_header_above(c("Prawdziwa \n klasa" = 1, "Przewidywana klasa" = 6)) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+wynik_machen_3 <- round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag * 100, 2)
 ```
 
-Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+Dokładność klasyfikacji uzyskana metodą AGNES z wykorzystaniem najbliższego sąsiada wynosi `r wynik_machen_3`%.
 
-Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+Wynik ten należy ocenić jako **bardzo niski**, co znajduje odzwierciedlenie na Wykresie 10. – większość obserwacji została przypisana do jednej, dominującej grupy, a pozostałe klastry są nieliczne lub niemal puste. Taki efekt jest typowy dla metody najbliższego sąsiada, która ma tendencję do łączenia punktów w wydłużone struktury, często prowadzące do *efektu łańcucha* i zaburzenia rzeczywistej struktury klas.
 
-#### Najdalszy sąsiad
+#### Najdalszy sąsiad (*Complete Linkage*)
 
-\newpage
+W tej części zastosowano metodę najdalszego sąsiada w ramach algorytmu AGNES.
 
-```{r, fig.cap="AGNES: complete linkage"}
+```{r, fig.cap="AGNES - najdalszy sąsiad"}
 glass.agnes.complete <- agnes(x = glass.conf_mat,
                             diss = TRUE,
                             method = "complete")
@@ -1184,12 +1204,16 @@ conf_mat <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
-kable(matrix, caption = "Macierz błędów; agnes, najdalszy sąsiad")
+kable(matrix, caption = "Macierz pomyłek - AGNES - najdalszy sąsiad") %>%
+  add_header_above(c("Prawdziwa \n klasa" = 1, "Przewidywana klasa" = 6)) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+wynik_machen_4 <- round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag * 100, 2)
 ```
 
-Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
-
-Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+Dokładność klasyfikacji uzyskana metodą AGNES z wykorzystaniem najdalszego sąsiada wynosi `r wynik_machen_4`%.
 
 #### Średnia odległość
 
