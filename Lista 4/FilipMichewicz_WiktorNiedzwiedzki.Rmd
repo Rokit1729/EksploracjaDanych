@@ -34,7 +34,7 @@ knitr::opts_chunk$set(
   echo = FALSE,
   fig.align="center",
   fig.width = 7,
-  fig.height = 4,
+  fig.height = 5,
   fig.pos = "H",
   out.extra = '')
 ```
@@ -919,7 +919,7 @@ df_table <- data.frame(
            "Procent masowy wapnia (%)",
            "Procent masowy baru (%)",
            "Procent masowy żelaza (%)",
-           "Klasa (typ szkła: 1, 2, 3, 5, 6, 7)"
+           "Typ szkła"
            )
 )
 
@@ -961,7 +961,10 @@ Z Wykresu 2. można odczytać, że liczba obserwacji poszczególnych klas w zbio
 boxplot(Glass[-10], las=2, col="tomato")
 ```
 
-KURWA STANDARYZACJA MACHEN
+Na Wykresie 3. można zaobserwować wyraźną potrzebę standaryzacji danych przed zastosowaniem modelu.
+
+Dodatkowo, na wykresie nie zauważono punktów odpowiadających błędnie przypisanym wartościom brakującym, które wyróżniałyby się jako odstające obserwacje. Świadczy to o odpowiednim przygotowaniu danych oraz skutecznym radzeniu sobie modelu z ewentualnymi brakami w zbiorze.
+
 
 ```{r, fig.cap="Wykres pudełkowe, po standaryzacji"}
 Glass[-10] <- scale(Glass[-10])
@@ -972,7 +975,9 @@ k <- length(levels(Glass$Type))
 boxplot(glass, las=2, col="tomato") #Teraz zajebiście
 ```
 
-Teraz jest zajebiście
+Na Wykresie 4., przedstawiającym dane po standaryzacji, można zauważyć wyraźne odstępstwa, które wskazują na obecność wartości odstających. Przykładowo, jedna z próbek cechuje się wyjątkowo wysokim poziomem potasu, co może sugerować błąd pomiarowy lub anomalię w procesie produkcji szkła.
+
+Ponadto, większość próbek szkła nie zawiera baru, co skutkuje zerowymi lub bardzo niskimi wartościami tej cechy w większości obserwacji. W konsekwencji, próbki zawierające bar stają się wartościami odstającymi względem reszty danych, co jest dobrze widoczne na wykresie.
 
 ```{r, fig.cap="Wizualizacja danych, PCA"}
 pca_result <- prcomp(glass)
@@ -983,23 +988,35 @@ ylab1 <- paste0("PC2 (", round(pca_summary[2, 2]*100, 2), "%)")
 
 plot(pca_result$x[, 1], pca_result$x[, 2],
      xlab = xlab1, ylab = ylab1,
-     col = Glass$Type)
+     col = Glass$Type,
+     pch = 19)
 ```
 
-Chuja widać, ciekawe kto wybrał ten zbiór?
+Na Wykresie 5. przedstawiono wizualizację danych po zastosowaniu redukcji wymiarowości za pomocą analizy głównych składowych (PCA). Choć pierwsze dwie składowe, PC1 i PC2, wyjaśniają łącznie około 50,7% zmienności w danych, nie przekłada się to na wyraźne rozdzielenie klas.
+
+Wieloklasowe punkty nadal skupiają się blisko siebie, co utrudnia ich rozróżnienie w przestrzeni dwuwymiarowej.
 
 ## Wyniki grupowania
 
-Przeprowadzamy dla rzeczywistej liczby etykiet, która wynosi **`r k`**.
+W tej części przeprowadzono grupowanie danych z zastosowaniem czterech metod: k-średnich (k-means), PAM (Partitioning Around Medoids), AGNES (Agglomerative Nesting) oraz DIANA (Divisive Analysis).
+
+Dla zapewnienia spójności porównania, liczba grup została przyjęta zgodnie z rzeczywistą liczbą klas w zbiorze danych, która wynosi **`r k`**. Pozwoli to ocenić, w jakim stopniu poszczególne algorytmy są w stanie odwzorować rzeczywistą strukturę klas obecnych w zbiorze **glass**.
 
 ### k-średnie
 
+W tej części zastosowano algorytm **k-średnich (k-means)**, który należy do metod niehierarchicznych, opartych na minimalizacji wewnątrzgrupowej sumy kwadratów odległości. Algorytm iteracyjnie przypisuje obserwacje do jednego z `r k` klastrów na podstawie ich podobieństwa, a następnie aktualizuje położenie centroidów, aż do osiągnięcia stabilności układu.
+
+Grupowanie przeprowadzono na danych uprzednio poddanych standaryzacji, co zapewnia równoważny wpływ wszystkich zmiennych na wynik końcowy. Wyniki grupowania zostaną porównane z rzeczywistymi etykietami klas w celu oceny skuteczności metody.
+
+
 ```{r, fig.cap="PCA, kolory - rzeczywiste, kształt - wyniki"}
-kmeans.k3 <- kmeans(glass, centers = k, iter.max = 10)
+kmeans.k3 <- kmeans(glass, centers = k, iter.max = 100)
 wyniki <- kmeans.k3$cluster
 
-plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
-     col = Glass$Type, pch = wyniki)
+plot(pca_result$x[, 1], pca_result$x[, 2],
+     xlab = xlab1, ylab = ylab1,
+     col = Glass$Type,
+     pch = wyniki)
 ```
 
 Gównianie mu poszło
