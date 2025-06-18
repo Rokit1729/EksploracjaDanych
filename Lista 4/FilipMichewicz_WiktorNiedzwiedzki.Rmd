@@ -136,7 +136,7 @@ wine_scaled <- wine
 wine_scaled[col] <- scale(wine[col])
 ```
 
-Na wykresie przedstawiono pojedyńcze drzewo klasyfikacyjne.
+Na wykresie przedstawiono pojedyncze drzewo klasyfikacyjne.
 
 ```{r drzewo_klasyfikacyjne, fig.cap="Pojedyńcze drzewo klasyfikacyjne", cache = TRUE}
 mypredict.rpart <- function(object, newdata)  predict(object, newdata=newdata, type="class")
@@ -155,9 +155,7 @@ error.tree <- (errorest(Gatunek ~ ., data = wine,
                        est.para = control.errorest(nboot = K)))$error
 ```
 
-Błąd estymowany metodą bootstrap .632+ wynosi `r round(error.tree*100, 2)`%. Na jego podstawie określimy poprawę modelu po zastosowaniu metod uczenia zespołowego. 
-
-**MOŻESZ DAĆ TU WZÓR ŻE POPRAWĘ DEFINIUJEMY JAKO (błąd jednego drzewa - błąd metody)/ błąd jednego drzewa * 100% w Latechuj**
+Błąd estymowany metodą bootstrap .632+ wynosi `r round(error.tree*100, 2)`%. Na jego podstawie określimy poprawę modelu po zastosowaniu metod uczenia zespołowego. Poprawę błędu klasyfikacji będziemy definiować jako stosunek różnicy błędu osiągniętego na jednym drzewie oraz błędu po zastosowaniu danej metody, do błędu na pojedynczym drzewie właśnie.
 
 W tej części analizy do oceny wydajności modelu zostanie wykorzystana wyłącznie metoda .632+, ponieważ koryguje ona obciążenie estymatora (bias) i dostarcza bardziej wiarygodnej oceny błędu generalizacji, zwłaszcza przy ryzyku przeuczenia i ograniczonej liczbie próbek.
 
@@ -202,6 +200,8 @@ for(b in B.vector){
 
 matrix <- do.call(cbind, lista)
 rownames(matrix) <- c("Bagging", "Random Forest", "Boosting")
+
+matrix1 <- (1-(1 - matrix/100)*error.tree)*100
 ```
 
 ```{r}
@@ -213,6 +213,8 @@ kable(matrix,
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
+
+Z Tabeli 1. wynika, że wszystkie rozważane metody — las losowy, boosting oraz bagging — znacząco poprawiły błąd klasyfikacji względem samego drzewa, osiągając redukcję błędu przekraczającą 60%. Świadczy to o wysokiej skuteczności zastosowanych technik ensemble do zwiększenia skuteczności pojedynczego drzewa klasyfikacyjnego.
 
 ## Metoda wektorów nośnych (SVM)
 
@@ -887,9 +889,29 @@ Analizując wyniki przedstawione w Tabelach 18–23. dla jądra sigmoidalnego, m
 
 ## Porówanie metod
 
+```{r}
+kable(matrix1,
+  caption = "Dokładność klasyfikacji za pomocą drzewa klasyfikacyjnego, z podziałem na algorytmy uczenia zespołowego oraz liczbę replikacji", 
+  digits = 2) %>%
+  add_header_above(c("Algorytm \n uczenia \n zespołowego" = 1, "Liczba replikacji" = 8)) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Z Tabeli 24. możemy odczytać, że wszystkie trzy metody uczenia zespołowego skutecznie poprawiły klasyfikację przypadków. Najlepsze wyniki osiągnęła metoda RandomForest, której dokładność dla dowolnej liczby klasyfikatorów wyniosła powyżej 98% (w tym pojedyczny wynik powyżej 99%, najlepszy ze wszystkich). Najgorsze wyniki natomiast osiągnęła metoda Bagging,  dla liczby replikacji boostrapowych poniżej 20. Możemy również zauważyć, że ten sposób poprawy klasyfikacji na tym zbiorze nie osiągnął jednak dużo mniejszych wyników od Boosting. Zatem jeżeli zależy nam na jak najmniejszej złożoności obliczeniowej, warto z Boosting zrezygnować na rzecz pozostałych metod.
+
+Dla metody wektorów nośnych zauważyć mogliśmy, że dla różnych jąder różnie działają kombinacje parametrów kary oraz (dla odpowiednich) gammy. Jadro liniowe oraz wielomianowe osiągnęły największą dokładnośc klasyfikacji dla **C** = 0.1 wielomianowe również dla stopnia równego 3 i **gamma** = 10. Jądra radialne oraz sigmoidalne wymagały o wiele większej różnicy między parametrami. W pierwszym różnica jest około 10000-krotna, a dla drugiej, aż $10^{10}$.
+
+Najlepsze parametry dla poszczególnych SVM dają wyniki klasyfikacji porównywalne do metod boosting oraz bagging. Jednak najlepsze wyniki osiągamy dla metody RandomForest.
+
 ## Wnioski
 
-e
+Podsumowując, w tej części raportu zbadaliśmy dokładność klasyfikacji osiąganą za pomocą metod wektorów nośnych (SVM) oraz metod uczenia zespołowego.
+
+Dla odpowiednio dobranych parametrów kary oraz (z wyjątkiem dla jądra liniowego) gamma, SVM dało wyniki przekraczające ponad 94%. Jednak dla każdego jądra dobór parametrów różnił się, jednak najlepsze wyniki otrzymywała para kary i co najmniej 100-krotnie mniejszej gammy.
+
+Metody uczenia zespołowego zastosowane dla drzew klasyfikacyjnych znacznie poprawiły dokładność klasyfikacji, osiągając wyniki ponad 96% (z wyjątkiem 3 wartości dla bagging). Najlepszy okazał się las losow, który odznacza się mniejszą złożonością obliczeniową niż boosting oraz porównywalną do bagging.
 
 \newpage
 
@@ -906,7 +928,7 @@ To zadanie zostanie wykonane już na innym danych, którymi będzie zbiór *glas
 Zbiór danych glass zawiera **`r nrow(Glass)`** przypadków sześciu rodzajów szkła oraz **`r ncol(Glass)`** cech. Liczba brakujących
 danych wynosi **`r sum(is.na(Glass))`**.
 
-Znaczenie poszczególnych cech oraz ich typ przedstawiono w Tabeli 24.
+Znaczenie poszczególnych cech oraz ich typ przedstawiono w Tabeli 25.
 
 ```{r, cache=TRUE}
 df_table <- data.frame(
@@ -1093,7 +1115,7 @@ points(medoids[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
 
 Z Wykresu 9. wynika, że poza lepszym odwzorowaniem rzeczywistych klas, metoda PAM skuteczniej lokalizuje reprezentatywne punkty – **medoidy** – w przestrzeni danych. W przeciwieństwie do metody k-średnich, gdzie centra skupień mogą przyjmować pozycje oderwane od rzeczywistych obserwacji, medoidy znajdują się bezpośrednio wśród danych i w wielu przypadkach są położone blisko środka odpowiadającej im grupy.
 
-Taka właściwość przekłada się na większą interpretowalność i odporność algorytmu na obserwacje odstające. Szczegółowe informacje dotyczące wybranych medoidów oraz odpowiadających im klas przedstawiono w Tabeli 26..
+Taka właściwość przekłada się na większą interpretowalność i odporność algorytmu na obserwacje odstające. Szczegółowe informacje dotyczące wybranych medoidów oraz odpowiadających im klas przedstawiono w Tabeli 27..
 
 ```{r}
 kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów") %>% 
@@ -1387,7 +1409,7 @@ kable(df, caption = "Porównanie dokładności różnych metod klasteryzacji") %
                 stripe_color = "#B0B0B0")
 ```
 
-Na podstawie danych przedstawionych w Tabeli 33. można wywnioskować, że najlepsze wyniki klasyfikacji osiąga algorytm **DIANA** wykorzystujący metrykę **euklidesową**.
+Na podstawie danych przedstawionych w Tabeli 34. można wywnioskować, że najlepsze wyniki klasyfikacji osiąga algorytm **DIANA** wykorzystujący metrykę **euklidesową**.
 
 Wskaźnik dokładności dla tej konfiguracji jest najwyższy spośród analizowanych metod, co wskazuje na najskuteczniejsze odwzorowanie rzeczywistej struktury klas w zbiorze danych.
 
@@ -1531,7 +1553,7 @@ plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
 
 Z Wykresu 18. można odczytać że metodzie k-średnich dobrze poszło z podziałem na dwa klastry.
 
-```{r, fig.cap="WZależnośc współczynnika załamania światła od procentu masowego sodu z kolorami i kształtami klas dla optymalnej liczby klastrów - zaznaczone centroidy z metody k-średnich"}
+```{r, fig.cap="Zależnośc współczynnika załamania światła od procentu masowego sodu z kolorami i kształtami klas dla optymalnej liczby klastrów - zaznaczone centroidy z metody k-średnich"}
 plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na", pch = wyniki+1,
      col = wyniki)
 points(kmeans.k3$centers[,c("RI", "Na")], pch = 16, cex = 1.5, col = 1:2)
@@ -1539,7 +1561,7 @@ points(kmeans.k3$centers[,c("RI", "Na")], pch = 16, cex = 1.5, col = 1:2)
 wynik_machen_1 <- round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)
 ```
 
-NA Wykresie 19. widać że centra znajdują się w dorbych miejsach.
+Na Wykresie 19. widać że centra znajdują się w dorbych miejsach.
 
 Dokładność klasyfikacji uzyskana metodą k-średnich wynosi `r wynik_machen_1`%.
 
@@ -1547,7 +1569,7 @@ Dokładność klasyfikacji uzyskana metodą k-średnich wynosi `r wynik_machen_1
 
 Sprawdzamy, jak metoda **PAM** radzi sobie przy założeniu optymalnej liczby klastrów równej **2**.
 
-```{r, fig.cap="coś, k=2"}
+```{r, fig.cap="Wizualizacja danych po grupowania metodą PAM z optymalną liczbą klastrów - PCA"}
 glass.pam7 <- pam(x=glass.conf_mat, diss=TRUE, k=2)
 
 wyniki <- glass.pam7$clustering
@@ -1558,9 +1580,9 @@ plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
      col = wyniki, pch = wyniki+1)
 ```
 
-Też słabo
+Na Wykresie 20. również widać dobrą klasyfikację danych.
 
-```{r, fig.cap="coś, z medoidami, k=2"}
+```{r, fig.cap="Zależnośc współczynnika załamania światła od procentu masowego sodu z kolorami i kształtami klas z optymalną liczbą klastrów - zaznaczone medoidy z metody PAM"}
 medoids <- glass[glass.pam7$id.med, ]
 
 plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
@@ -1568,47 +1590,92 @@ plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
 points(medoids[,c("RI", "Na")], pch = 16, cex = 1.5, col = 1:2)
 ```
 
-Meh
+Z Wykresu 21. można wywnioskować, że medoidy zostały umiejscowione w odpowiednich punktach przestrzeni, co świadczy o dobrej reprezentatywności tych obiektów dla poszczególnych klastrów.
 
-Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+Pomimo ograniczeń wizualizacji dwuwymiarowej, tło wskazuje, że większość obserwacji została poprawnie zakwalifikowana do odpowiadających im klas, co potwierdza skuteczność zastosowanego algorytmu.
 
 ```{r}
-kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów, k=2")
+kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów dla optymalnej liczby klas") %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+wynik_machen_2 <- round(compareMatchedClasses(wyniki, Glass$Type)$diag * 100, 2)
 ```
+
+Z Tabeli 35. widać co charakteryzuje medoidy. Jest nimi zawartość Magnezu (Mg) i Potasu (K) dla jednej klasy i Baru (Ba) dla drugiej.
+
+Dokładność klasyfikacji uzyskana metodą PAM z optymalną liczbą klastrów wynosi `r wynik_machen_2`%.
 
 #### AGNES
 
-```{r, fig.cap="AGNES: complete linage, k=2", cache = TRUE}
+Sprawdzamy, jak metoda **AGNES** radzi sobie przy założeniu optymalnej liczby klastrów równej **2**.
+
+```{r, fig.cap="AGNES - najbliższy sąsiad - optymalna liczba klastrów", cache = TRUE}
 glass.agnes.complete <- agnes(x = glass.conf_mat,
                               diss = TRUE,
                               method = "complete")
 
-fviz_dend(glass.agnes.complete, cex=0.4, k = 2)
+fviz_dend(glass.agnes.complete, cex=0.4, k = 2, main=" ")
 
 wyniki <- cutree(glass.agnes.single, k = 2)
+
+wynik_machen_3 <- round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)
 ```
 
-Tylko dla najdalszych sąsiadów, bo dał najlepsze wyniki.
-
-Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+Dokładność klasyfikacji uzyskana metodą AGNES z optymalną liczbą klastrów wynosi `r wynik_machen_3`%.
 
 #### DIANA
 
-```{r, fig.cap="DIANA, k=3", cache = TRUE}
+Sprawdzamy, jak metoda **DIANA** radzi sobie przy założeniu optymalnej liczby klastrów równej **2**.
+
+```{r, fig.cap="DIANA - odległość euklidesowa - optymalna liczba klastrów", cache = TRUE}
 glass.agnes.euclidean <- diana(x = glass.conf_mat,
                             diss = TRUE,
                             metric = "euclidean")
 
-fviz_dend(glass.agnes.euclidean, cex=0.4, k = 3)
+fviz_dend(glass.agnes.euclidean, cex=0.4, k = 2, main = "")
 
-wyniki <- cutree(glass.agnes.euclidean, k = 3)
+wyniki <- cutree(glass.agnes.euclidean, k = 2)
+
+wynik_machen_4 <- round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)
 ```
 
-Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+Dokładność klasyfikacji uzyskana metodą k-średnich wynosi `r wynik_machen_4`%.
+
+``` {r}
+metody <- c("k-średnich", 
+            "PAM", 
+            "AGNES",
+            "DIANA")
+
+wartosci <- c(wynik_machen_1,
+              wynik_machen_2,
+              wynik_machen_3,
+              wynik_machen_4)
+
+df <- data.frame(
+  Metoda = metody,
+  Dokladnosc = round(wartosci, 2)
+) %>%
+  arrange(desc(Dokladnosc))
+
+kable(df, caption = "Porównanie dokładności różnych metod klasteryzacji - optymalna liczba klastrów") %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Tabela 36. pokazuje, że najlepszą dokładność osiągnęła metoda **k-średnich** (96,19%), następnie **PAM** (94,29%). Metody hierarchiczne AGNES i DIANA uzyskały niższe wyniki — odpowiednio 87,64% i 52,74%.
+
 
 ## Wnioski
 
-# Podsumowanie
+* Najlepszą metodą do klasyfikacji **6 klastrów** okazała się **DIANA**.
+* Metody nienadzorowane wskazały optymalną liczbę klastrów na **2**.
+* Dla liczby skupień równej **2** najlepszym klasyfikatorem jest metoda **k-średnich**.
+
+\newpage
 
 ```{r, cache = TRUE}
 end = Sys.time()
