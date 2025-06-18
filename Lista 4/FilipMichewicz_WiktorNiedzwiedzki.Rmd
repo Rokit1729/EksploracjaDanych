@@ -879,6 +879,8 @@ kable(kernel.type.bs(scale = TRUE, kernel="sigmoid"), digits = 2,
 
 Analizując wyniki przedstawione w Tabelach 18–23 dla jądra sigmoidalnego, można zauważyć, że model osiąga najlepsze wyniki klasyfikacyjne przy wartościach parametru **C** mieszczących się w przedziale od 100 do 1000 oraz **gamma** w zakresie od 0.001 do 0.01.
 
+## Porówanie metod
+
 ## Wnioski
 
 e
