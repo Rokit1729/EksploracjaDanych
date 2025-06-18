@@ -584,7 +584,7 @@ Podobnie jak w przypadku jądra liniowego, porównanie wyników dla obu wariant�
 ```{r, cache = TRUE}
 kable(kernel.type(kernel="polynomial"), digits = 2,
       caption = "Jądro wielomianowe - wielokrotny podział, bez skalowania") %>%
-  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik kary - gamma" = 12)) %>% 
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -595,7 +595,7 @@ dataFrame <- kernel.type(scale = TRUE, kernel="polynomial")
 
 kable(dataFrame, digits = 2,
       caption = "Jądro wielomianowe - wielokrotny podział, ze skalowaniem") %>%
-  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik kary - gamma" = 12)) %>% 
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -604,16 +604,18 @@ kable(dataFrame, digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.cv(kernel="polynomial"), digits = 2,
       caption = "Jądro wielomianowe - cross-validation, bez skalowania") %>%
-  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik kary - gamma" = 12)) %>% 
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
 
+W Tabeli 6. widać efekt plateau - dla wielu kombinacji wartości **C** i **gamma** dokładność utrzymuje się na poziomie 96,11%. Oznacza to, że w badanym zakresie hiperparametrów model osiągnął nasycenie: dalsze zwiększanie **C** czy **gamma** nie poprawia dopasowania ani dokładności. Problem plateau utrudnia dalszą optymalizację, ponieważ w “płaskim obszarze” przestrzeni parametrów zmiana wartości nie przynosi korzyści.
+
 ```{r, cache = TRUE}
 kable(kernel.type.cv(scale = TRUE, kernel="polynomial"), digits = 2,
       caption = "Jądro wielomianowe - cross-validation, ze skalowaniem") %>%
-  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik kary - gamma" = 12)) %>% 
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -622,7 +624,7 @@ kable(kernel.type.cv(scale = TRUE, kernel="polynomial"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.bs(kernel="polynomial"), digits = 2,
       caption = "Jądro wielomianowe - bootstrap, bez skalowania") %>%
-  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik kary - gamma" = 12)) %>% 
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -631,29 +633,19 @@ kable(kernel.type.bs(kernel="polynomial"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.bs(scale = TRUE, kernel="polynomial"), digits = 2,
       caption = "Jądro wielomianowe - bootstrap, ze skalowaniem") %>%
-  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik kary - gamma" = 12)) %>% 
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
 
-```{r, cache = TRUE}
-best_gamma <- 0
-best_C <- 0
-kandydat <- 0
+Analiza Tabel 4–9 prowadzi do wniosku, że najwyższą dokładność klasyfikacji uzyskano dla kombinacji hiperparametrów: **gamma = 10** oraz **C = 0.1**. Ponadto zauważono, że zastosowanie skalowania cech miało korzystny wpływ na wyniki – w większości przypadków prowadziło do poprawy skuteczności klasyfikatora.
 
-for(i in C){
-  for(j in gamma){
-    cell <- dataFrame[as.character(i), as.character(j)]
-    if(cell > kandydat){
-      best_gamma <- j
-      best_C <- i
-      kandydat <- cell
-    }
-  }
-}
+Dodatkowo przeanalizowano wpływ stopnia wielomianu jądra na jakość klasyfikacji.
 
-degree <- 2:7
+
+``` {r, cache = TRUE}
+degree <- 2:10
 df <- as.data.frame(matrix(NA, nrow=1, ncol=length(degree)))
 rownames(df) <- "Dokładność"
 colnames(df) <- as.character(degree)
@@ -670,7 +662,7 @@ for(d in degree){
     test.set <- wine_scaled[-id.learn, ]
     
     svm <- svm(Gatunek ~ ., data=train.set, kernel = "polynomial",
-               degree = d, gamma = best_gamma, cost = best_C)
+               degree = d, gamma = 10, cost = 0.1)
     
     prediction <- predict(svm, newdata=test.set)
     prediction <- table(prediction, test.set$Gatunek)
@@ -684,20 +676,24 @@ for(d in degree){
 }
 ```
 
-Najlepsza gamma: **`r best_gamma`**, najlepsza kara: **`r best_C`**. Robimy dla danych po standaryzacji, bo tak i chuj.
-
-Badamy tylko na podstawie wielokrotnego podziału, bo tak i chuj również.
-
 ```{r}
 kable(df, digits = 2,
-      caption = "Badanie wpływu stopnia wielomianu na dokładność - wielokrotny podział, najbardziej dokładna kombinacja gammy i kary dla opcji default (stopień 3")
+      caption = "Dokładność klasyfikacji w zależności od stopnia wielomianu — metoda wielokrotnego podziału z użyciem najlepszej kombinacji parametrów gamma i C") %>% 
+  add_header_above(c(" " = 1, "Stopień wielomianu" = 9))
 ```
 
-### Jądro radialne
+Z Tabeli 10. wynika, że najwyższą dokładność klasyfikacji uzyskano dla wielomianu stopnia **3** – czyli tego samego, który został zastosowany przy wcześniejszym doborze optymalnych wartości parametrów **gamma** i **C**. Potwierdza to trafność wyboru tego stopnia jako podstawy do dalszej optymalizacji modelu.
+
+### Jądro radialne (RBF)
+
+Przeanalizowano skuteczność klasyfikacyjną z zastosowaniem jądra radialnego, zarówno **bez skalowania danych**, jak i **po ich skalowaniu**.
+
+Podobnie jak w przypadku jąder liniowego i wielomianowego, porównanie wyników dla obu wariantów umożliwia ocenę wpływu przeskalowania zmiennych na jakość klasyfikacji. W przypadku jądra radialnego, oprócz parametru **C**, kluczową rolę odgrywa również parametr **gamma**, który kontroluje zasięg wpływu pojedynczych obserwacji treningowych.
 
 ```{r, cache = TRUE}
 kable(kernel.type.cv(kernel="radial"), digits = 2,
       caption = "Jądro radialne - wielokrotny podział, bez skalowania") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -706,6 +702,7 @@ kable(kernel.type.cv(kernel="radial"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.cv(scale = TRUE, kernel="radial"), digits = 2,
       caption = "Jądro radialne - wielokrotny podział, ze skalowaniem") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -714,6 +711,7 @@ kable(kernel.type.cv(scale = TRUE, kernel="radial"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.cv(kernel="radial"), digits = 2,
       caption = "Jądro radialne - cross-validation, bez skalowania") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -722,14 +720,22 @@ kable(kernel.type.cv(kernel="radial"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.cv(scale = TRUE, kernel="radial"), digits = 2,
       caption = "Jądro radialne - cross-validation, ze skalowaniem") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
 
+W Tabelach 11–14. obserwujemy, że zarówno dla danych bez skalowania, jak i po ich skalowaniu, dokładność utrzymuje się na poziomie około 39,9% dla wielu kombinacji parametrów **gamma** i **C**. Odwołująć się do Raportu 3. "Gdybyśmy przypisali wszystkie obserwacje do najczęściej występującej klasy, uzyskalibyśmy dokładność na poziomie 39.89%."
+
+Oznacza to, że model w tych ustawieniach przypisuje wszystkie obserwacje do dominującej klasy, co wskazuje na underfitting. 
+
+Fakt, że skalowanie nie poprawiło wyniku, sugeruje, iż problem nie wynika wyłącznie z różnic w skali cech, lecz także z nieoptymalnego zakresu hiperparametrów, możliwej nierównowagi klas lub niewystarczającej reprezentacji cech do separacji. Efekt plateau w obu wariantach (ze skalowaniem i bez) oznacza, że w badanym zakresie dalsze zmiany **gamma** i **C** nie wpływają na poprawę dokładności, ponieważ model nie „widzi” struktur rozróżniających klasy.
+
 ```{r, cache = TRUE}
 kable(kernel.type.bs(kernel="radial"), digits = 2,
       caption = "Jądro radialne - bootstrap, bez skalowania") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -738,14 +744,88 @@ kable(kernel.type.bs(kernel="radial"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.bs(scale= TRUE, kernel="radial"), digits = 2,
       caption = "Jądro radialne - bootstrap, ze skalowaniem") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 12)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
 
-### Jądro sigmoidalne
+Tabela 15. i 16. nie wykazują efektu plateau, jednak uzyskane wyniki są niskie. Zaobserwowano, że najlepsze rezultaty pojawiają się przy niskich wartościach **gamma** i wysokim współczynniku kary **C**, co sugeruje, że taka konfiguracja sprzyja lepszej separacji klas. W celu dalszej poprawy dokładności przeprowadzono dodatkowe testy z użyciem metody bootstrap po skalowaniu danych, modyfikując zakres parametrów **gamma** i **C**.
+
+```{r radialne-poprawa}
+  C <- 10^(0:6) #kara
+  gamma <- 10^(-6:0)
+
+#Bootstrap
+kernel.type.bs.better <- function(K = 10, size = 2/3, scale = FALSE, kernel){
+  
+  df <- as.data.frame(matrix(NA, nrow = length(C), ncol = length(gamma)))
+  
+  rownames(df) <- as.character(C)
+  colnames(df) <- as.character(gamma)
+  
+  for(c in C){
+    
+    for(g in gamma){
+      
+      accuracy <- 0
+      
+      for(i in 1:K){
+        
+        id.learn <- sample(seq_len(nrow(wine)),
+                           size = floor(nrow(wine) * size),
+                           replace = TRUE)
+        
+        if(scale == TRUE){
+          train.set <- wine_scaled[id.learn, ]
+          test.set <- wine_scaled[-id.learn, ]
+        }
+        else{
+          train.set <- wine[id.learn, ]
+          test.set <- wine[-id.learn, ]
+        }
+        
+        svm <- svm(Gatunek ~ ., data=train.set, kernel = kernel,
+                   gamma = g, cost = c)
+        
+        prediction <- predict(svm, newdata=test.set)
+        prediction <- table(prediction, test.set$Gatunek)
+        
+        accuracy <- accuracy + sum(diag(prediction))/sum(prediction)
+      }
+      
+      df[as.character(c), as.character(g)] <- accuracy/K*100
+    
+    }
+  }
+  
+  return(df)
+}
+```
 
 ```{r, cache = TRUE}
+kable(kernel.type.bs.better(scale= TRUE, kernel="radial"), digits = 2,
+      caption = "Jądro radialne - bootstrap, ze skalowaniem - zmienione parametry C i gamma") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+```
+
+Analiza Tabeli 17. pokazuje, że bardzo niskie wartości **gamma** i **C** skutkują niską dokładnością na poziomie już spotkanego przypisania wszystkich obserwacji do najliczniejszej klasy. Bardzo duże **C** wymuszają surową karę za błędy, co zwiększa dopasowanie do danych, ale może prowadzić do przeuczenia. Natomiast małe **gamma** powoduje, że wpływ pojedynczych punktów jest szeroki, co wygładza granicę decyzyjną i zapobiega nadmiernemu dopasowaniu. Połączenie dużego **C** z małym lub umiarkowanym **gamma** daje najlepsze wyniki, zapewniając równowagę między dopasowaniem a uogólnianiem modelu.
+
+Na podstawie tego stwierdzamy że najlepsze wyniki dla jądra radialnego osiągane są dla **C** wynoszącego 1 000 000 i **gamma** wynoszącego 0.0001.
+
+### Jądro sigmoidalne
+
+Przeanalizowano skuteczność klasyfikacyjną z zastosowaniem jądra sigmoidalnego, zarówno **bez skalowania danych**, jak i **po ich skalowaniu**.
+
+Podobnie jak w przypadku jąder liniowego, wielomianowego i radialnego, porównanie wyników dla obu wariantów umożliwia ocenę wpływu przeskalowania zmiennych na jakość klasyfikacji.
+
+```{r, cache = TRUE}
+C <- 10^(-3:3) #kara
+gamma <- c(0.01, 0.1, 1:10)
+
 kable(kernel.type(kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - wielokrotny podział, bez skalowania") %>%
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
