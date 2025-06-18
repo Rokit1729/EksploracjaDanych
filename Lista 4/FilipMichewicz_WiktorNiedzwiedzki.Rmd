@@ -155,7 +155,7 @@ error.tree <- (errorest(Gatunek ~ ., data = wine,
                        est.para = control.errorest(nboot = K)))$error
 ```
 
-Błąd estymowany metodą bootstrap .632+ wynosi `r round(error.tree, 4)`%. Na jego podstawie określimy poprawę modelu po zastosowaniu metod uczenia zespołowego. 
+Błąd estymowany metodą bootstrap .632+ wynosi `r round(error.tree*100, 2)`%. Na jego podstawie określimy poprawę modelu po zastosowaniu metod uczenia zespołowego. 
 
 W tej części analizy do oceny wydajności modelu zostanie wykorzystana wyłącznie metoda .632+, ponieważ koryguje ona obciążenie estymatora (bias) i dostarcza bardziej wiarygodnej oceny błędu generalizacji, zwłaszcza przy ryzyku przeuczenia i ograniczonej liczbie próbek.
 
@@ -562,6 +562,10 @@ kable(df, caption = "Jądro liniowe - ze skalowaniem", digits = 2) %>%
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
+
+Z analizy Tabeli 2. oraz Tabeli 3. wynika, że optymalną wartością parametru **C** w klasyfikacji SVM z jądrem liniowym jest **0.1**. Dla tej wartości obserwuje się najwyższą średnią skuteczność klasyfikacji zarówno bez skalowania, jak i po skalowaniu danych. Ponadto, zastosowanie skalowania cech nieznacznie poprawia wyniki, co wskazuje na korzystny wpływ normalizacji na efektywność modelu.
+
+Wyższe wartości parametru **C** nie przekładają się na istotną poprawę skuteczności klasyfikacji, a w niektórych przypadkach powodują nawet jej nieznaczny spadek. Wynika to z faktu, że zbyt duża wartość **C** powoduje nadmierne dopasowanie modelu do danych treningowych (overfitting). W konsekwencji, mimo że model stara się minimalizować błędy na zbiorze treningowym, jego efektywność na danych testowych nie ulega poprawie, co potwierdzają uzyskane wyniki.
 
 ### Jądro wielomianowe
 
