@@ -823,8 +823,8 @@ Przeanalizowano skuteczność klasyfikacyjną z zastosowaniem jądra sigmoidalne
 Podobnie jak w przypadku jąder liniowego, wielomianowego i radialnego, porównanie wyników dla obu wariantów umożliwia ocenę wpływu przeskalowania zmiennych na jakość klasyfikacji.
 
 ```{r, cache = TRUE}
-C <- 10^(-3:3) #kara
-gamma <- c(0.01, 0.1, 1:10)
+C <- 10^(-1:5) #kara
+gamma <- 10^(-3:3)
 
 kable(kernel.type(kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - wielokrotny podział, bez skalowania") %>%
@@ -832,6 +832,10 @@ kable(kernel.type(kernel="sigmoid"), digits = 2,
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
+
+Z Tabeli 18. można wyciągnąć interesującą obserwację. Dla niskich wartości parametrów **C** oraz **gamma** klasyfikator SVM wykazuje bardzo niską skuteczność – na tyle niską, że jego działanie jest gorsze niż proste przypisanie wszystkich obserwacji do najczęściej występującej klasy w zbiorze danych.
+
+Oznacza to, że przy zbyt małej karze za błąd klasyfikacji (**C**) oraz zbyt małym zasięgu wpływu pojedynczych obserwacji (**gamma**), model nie jest w stanie uchwycić żadnych istotnych wzorców w danych. W rezultacie uzyskana reguła klasyfikacyjna staje się praktycznie bezużyteczna i wykazuje się efektywnością niższą niż przypisanie wszystkich przypadków do jednej, dominującej klasy.
 
 ```{r, cache = TRUE}
 kable(kernel.type(scale = TRUE, kernel="sigmoid"), digits = 2,
@@ -873,7 +877,7 @@ kable(kernel.type.bs(scale = TRUE, kernel="sigmoid"), digits = 2,
                 stripe_color = "#B0B0B0")
 ```
 
-elo
+Analizując wyniki przedstawione w Tabelach 18–23 dla jądra sigmoidalnego, można zauważyć, że model osiąga najlepsze wyniki klasyfikacyjne przy wartościach parametru **C** mieszczących się w przedziale od 100 do 1000 oraz **gamma** w zakresie od 0.001 do 0.01.
 
 ## Wnioski
 
@@ -883,7 +887,7 @@ e
 
 # Analiza skupień – algorytmy grupujące i hierarchiczne
 
-W tym zadaniu zastosujemy i porównamy ze sobą metody analizy skupień - k-średnich i PAM jako algorytmy grupujące, oraz AGNES - algorytm hierarhiczny.
+W tym zadaniu zastosujemy i porównamy ze sobą metody analizy skupień - k-średnich i PAM jako algorytmy grupujące, oraz AGNES - algorytm hierarchiczny.
 
 Zadanie zostanie wykonane na zbiorze danych *wine*, którego szczegółowy opis znajduje się w poprzednim raporcie.
 
@@ -894,27 +898,27 @@ To zadanie zostanie wykonane już na innym danych, którymi będzie zbiór *glas
 Zbiór danych glass zawiera **`r nrow(Glass)`** przypadków sześciu rodzajów szkła oraz **`r ncol(Glass)`** cech. Liczba brakujących
 danych wynosi **`r sum(is.na(Glass))`**.
 
-Znaczenie poszczególnych cech oraz ich typ przedstawiono w tabeli 23.
+Znaczenie poszczególnych cech oraz ich typ przedstawiono w Tabeli 24.
 
 ```{r, cache=TRUE}
 df_table <- data.frame(
   Typ = sapply(Glass, class),
   Opis = c("Współczynnik załamania światła",
-           "Zawartość azotu (procent wagowy w odpowiednim tlenku, podobnie jak atrybuty 3-9)",
-           "Zawartość magnezu",
-           "Zawartość aluminium",
-           "Zawartość krzemu",
-           "Zawartość potasu",
-           "Zawartość wapnia",
-           "Zawartość baru",
-           "Zawartość żelaza",
+           "Procent masowy azotu (%)",
+           "Procent masowy magnezu (%)",
+           "Procent masowy glinu (%)",
+           "Procent masowy krzemu (%)",
+           "Procent masowy potasu (%)",
+           "Procent masowy wapnia (%)",
+           "Procent masowy baru (%)",
+           "Procent masowy żelaza (%)",
            "Klasa (typ szkła: 1, 2, 3, 5, 6, 7)"
            )
 )
 
 kable(df_table,
       col.names = c("Zmienna", "Typ", "Opis"),
-      caption = "Opis zmiennych w zbiorze danych wine") %>%
+      caption = "Opis zmiennych w zbiorze danych Glass") %>%
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -925,7 +929,7 @@ kable(df_table,
 sumy <- rowSums(Glass[-c(1, 10)])
 ```
 
-W poszczególnych przypadkach sumy procentów wagowych znajdują się w zakresie `r min(sumy)`-`r max(sumy)`. Nadmiar spowodowany jest najprawdopodobniej przez błędy przy zaokrąglaniu do dwóch miejsc po przecinku. Niedomiar natomiast może być spowodowany przez zawartość innych pierwiastków chemicznych, niezawartych w zbiorze.
+W poszczególnych przypadkach analizowanych próbek szkła sumy procentów masowych znajdują się w zakresie od `r min(sumy)` do `r max(sumy)`. Zaobserwowany nadmiar może wynikać z błędów zaokrągleń dokonanych przez autorów pomiarów. Natomiast niedomiar może być spowodowany zarówno obecnością innych pierwiastków chemicznych, nieuwzględnionych w zbiorze danych – tzw. pierwiastków śladowych – jak i niedokładnościami pomiarowymi lub zaokrągleniami dokonanymi przez autorów pomiarów.
 
 ```{r, cache=TRUE, fig.cap="Liczność poszczególnych typów szkła"}
 etykiety <- Glass$Type
