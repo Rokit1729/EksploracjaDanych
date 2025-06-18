@@ -1354,7 +1354,7 @@ Dodatkowo dokonamy doboru optymalnej liczby skupień, wykorzystując trzy wskaź
 
 Analiza tych miar pozwoli na wybór liczby klastrów, która najlepiej odzwierciedla strukturę danych, niezależnie od rzeczywistej liczby i rzeczywistych etykiet klas.
 
-### Ocena za pomocą wskaźnika dokładności
+### Ocena za pomocą wskaźników zewnetrznych
 
 Do oceny jakości uzyskanych grupowań w niniejszej analizie wykorzystano wskaźnik **dokładności klasyfikacji**.
 
@@ -1393,14 +1393,15 @@ Wskaźnik dokładności dla tej konfiguracji jest najwyższy spośród analizowa
 
 ### Ocena za pomocą wskaźników wewnętrznych
 
-Legenda:
+Do oceny jakości grupowania bez odwołania do rzeczywistych etykiet zastosowano trzy wskaźniki wewnętrzne:
 
-* 1 - kmeans,
-* 2 - PAM,
-* 3 - AGNES,
-* 4 - DIANA.
+* Connectivity
+* Wskaźnik Dunna
+* Indeks Silhouette
 
-```{r, fig.cap="coś", cache = TRUE}
+Ze względu na niewielki wpływ wyboru metody łączenia na strukturę wynikowego dendrogramu w algorytmach AGNES i DIANA, w dalszej analizie przyjęto ich podstawowe ustawienia.
+
+```{r, cache = TRUE}
 metody <- c("kmeans", "pam", "agnes", "diana")
 K.zakres <- 2:k
 
@@ -1433,7 +1434,14 @@ dunn <- data.frame("Kmeans" = measures[2, , 1],
                    "K" = 2:k)
 ```
 
-```{r, fig.cap="Connectivity", cache = TRUE}
+We wszystkich kolejnych wykresach zastosowana będzie następująca legenda:
+
+* 1 — k-średnie,
+* 2 — PAM,
+* 3 — AGNES,
+* 4 — DIANA.
+
+```{r, fig.cap="Connectivity dla metod klasteryzacji nienadzorowanej", cache = TRUE}
 max <- max(connectivity[-5])
 
 plot(connectivity$K, connectivity$Kmeans,
@@ -1445,18 +1453,18 @@ for(i in 2:4){
   lines(connectivity$K, as.vector(connectivity[, i]),
         type = "b", lty = i, col = i, lwd = 2, pch=paste(i))
 }
-
-legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
 ```
 
-Connectivity - im mniejszy, tym lepszy:
+Wyniki wskaźnika **Connectivity** wskazują, że najlepszą jakość skupień osiągnięto przy następującej liczbie klastrów:
 
-* kmeans - 2,
-* PAM - 2,
-* AGNES - 2 (najlepszy),
-* DIANA - 3.
+* **kmeans** – 2 klastry,
+* **PAM** – 2 klastry,
+* **AGNES** – 2 klastry (najlepszy wynik spośród wszystkich metod),
+* **DIANA** – 3 klastry.
 
-```{r, fig.cap="Dunn", cache = TRUE}
+Ponieważ dla Connectivity niższe wartości oznaczają lepszą spójność i zwartość skupień, wynik ten świadczy, że algorytm AGNES przy dwóch klastrach generuje najbardziej zwarte i jednorodne grupy spośród analizowanych metod.
+
+```{r, fig.cap="Wskaźnik Dunn dla metod klasteryzacji nienadzorowanej", cache = TRUE}
 max <- max(dunn[-5])
 
 plot(dunn$K, dunn$Kmeans,
@@ -1468,18 +1476,18 @@ for(i in 2:4){
   lines(dunn$K, as.vector(dunn[, i]),
         type = "b", lty = i, col = i, lwd = 2, pch=paste(i))
 }
-
-legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
 ```
 
-Dunn - im większy, tym lepszy:
+Wyniki wskaźnika **Dunn** dla poszczególnych metod przedstawiają się następująco:
 
-* kmeans - 2,
-* PAM - 2,
-* AGNES - 2 (najlepszy),
-* DIANA - 3.
+* **kmeans** – 2 klastry,
+* **PAM** – 2 klastry (najlepszy wynik),
+* **AGNES** – 2 klastry,
+* **DIANA** – 3 klastry.
 
-```{r, fig.cap="Silhouette"}
+Ponieważ wskaźnik Dunn rośnie wraz z poprawą separacji i zwartości klastrów, oznacza to, że metoda **PAM** przy dwóch klastrach zapewnia najbardziej zwarte i wyraźnie rozdzielone skupiska spośród analizowanych algorytmów.
+
+```{r, fig.cap="Indeks Silhouette dla metod klasteryzacji nienadzorowanej"}
 plot(silhouette$K, silhouette$Kmeans,
      type = "b", lty = 1, col = 1, lwd = 2,  pch=paste(1),
      xlab = "Liczba skupień", ylab = "Indeks silhouette",
@@ -1489,24 +1497,31 @@ for(i in 2:4){
   lines(silhouette$K, as.vector(silhouette[, i]),
         type = "b", lty = i, col = i, lwd = 2, pch=paste(i))
 }
-
-legend("bottomright", legend = c("1", "2", "3", "4"), col = 1:4, lty = 1:4, pch = paste(1:4), lwd = 2)
 ```
 
-Dunn - im większy, tym lepszy:
+Wyniki wskaźnika **Silhouette** dla poszczególnych metod przedstawiają się następująco:
 
-* kmeans - 2,
-* PAM - 2,
-* AGNES - 2 (najlepszy),
-* DIANA - 2.
+* **kmeans** – 2 klastry,
+* **PAM** – 2 klastry (najlepszy wynik),
+* **AGNES** – 2 klastry,
+* **DIANA** – 2 klastry.
 
-### Wizualizacja
+Ponieważ wartość wskaźnika Silhouette rośnie wraz z poprawą zwartości i separacji klastrów, oznacza to, że metoda **PAM** przy dwóch klastrach zapewnia najbardziej wyraźnie zdefiniowane i dobrze odseparowane skupiska spośród analizowanych algorytmów.
+
+
+Na podstawie otrzymanych wyników uznaliśmy, że optymalną liczbą skupień jest **2**.
+
+### Porównanie metod dla optymalnej liczby skupień
+
+W tej części dokonamy porównania skuteczności zastosowanych metod grupowania przy założeniu optymalnej liczby skupień równej **2**.
+
+Celem jest wskazanie metody, która najlepiej odwzorowuje rzeczywistą strukturę danych oraz zapewnia zwarte i dobrze rozdzielone klastry.
 
 #### k-średnie
 
-\newpage
+Sprawdzamy, jak metoda **k-średnich** radzi sobie przy założeniu optymalnej liczby klastrów równej **2**.
 
-```{r, fig.cap="PCA, kolory - rzeczywiste, kształt - wyniki, k=2"}
+```{r, fig.cap="Wizualizacja danych po grupowaniu metodą k-średnich z optymalną liczbą klastrów - PCA"}
 kmeans.k3 <- kmeans(glass, centers = 2, iter.max = 10)
 wyniki <- kmeans.k3$cluster
 
@@ -1514,21 +1529,23 @@ plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
      pch = wyniki+1, col = wyniki)
 ```
 
-Gównianie mu poszło
+Z Wykresu 18. można odczytać że metodzie k-średnich dobrze poszło z podziałem na dwa klastry.
 
-```{r, fig.cap="Wykres RI od Na, aby pokazać gdzie są wyznaczone centra skupień, k=2"}
+```{r, fig.cap="WZależnośc współczynnika załamania światła od procentu masowego sodu z kolorami i kształtami klas dla optymalnej liczby klastrów - zaznaczone centroidy z metody k-średnich"}
 plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na", pch = wyniki+1,
      col = wyniki)
 points(kmeans.k3$centers[,c("RI", "Na")], pch = 16, cex = 1.5, col = 1:2)
+
+wynik_machen_1 <- round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)
 ```
 
-Centra wywalone w kosmos, ale fajnie
+NA Wykresie 19. widać że centra znajdują się w dorbych miejsach.
 
-Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
+Dokładność klasyfikacji uzyskana metodą k-średnich wynosi `r wynik_machen_1`%.
 
 #### PAM
 
-\newpage
+Sprawdzamy, jak metoda **PAM** radzi sobie przy założeniu optymalnej liczby klastrów równej **2**.
 
 ```{r, fig.cap="coś, k=2"}
 glass.pam7 <- pam(x=glass.conf_mat, diss=TRUE, k=2)
@@ -1561,8 +1578,6 @@ kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów, k=2")
 
 #### AGNES
 
-\newpage
-
 ```{r, fig.cap="AGNES: complete linage, k=2", cache = TRUE}
 glass.agnes.complete <- agnes(x = glass.conf_mat,
                               diss = TRUE,
@@ -1578,8 +1593,6 @@ Tylko dla najdalszych sąsiadów, bo dał najlepsze wyniki.
 Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Type)$diag*100, 2)`%.
 
 #### DIANA
-
-\newpage
 
 ```{r, fig.cap="DIANA, k=3", cache = TRUE}
 glass.agnes.euclidean <- diana(x = glass.conf_mat,
