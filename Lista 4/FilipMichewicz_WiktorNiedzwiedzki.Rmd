@@ -1,7 +1,7 @@
 ---
 title: "Raport - Zaawansowane metody klasyfikacji oraz analiza skupień – algorytmy grupujące i hierarchiczne"
 author: "Filip Michewicz 282239  \n  Wiktor Niedźwiedzki 258882"
-date: "10 czerwca 2025 Anno Domini"
+date: "18 czerwca 2025 Anno Domini"
 output:
   pdf_document:
     number_sections: true
@@ -106,7 +106,8 @@ metryki <- function(conf) {
 # Zaawansowane metody klasyfikacji
 
 W pierwszej części zadania zastosujemy algorytmy *ensemble learning* (bagging,
-boosting i random forest) w celu poprawy dokładności cech klasyfikacyjnych. W drugiej natomiast poznamy i ocenimy nową metodę klasyfikacji - metodę wektorów nośnych (SVM).
+boosting i random forest) w celu poprawy dokładności cech klasyfikacyjnych. 
+W drugiej natomiast poznamy i ocenimy nową metodę klasyfikacji - metodę wektorów nośnych (SVM).
 
 Zadanie zostanie wykonane na zbiorze danych *wine*, którego szczegółowy opis znajduje się w poprzednim raporcie.
 
@@ -115,10 +116,10 @@ Zadanie zostanie wykonane na zbiorze danych *wine*, którego szczegółowy opis 
 Wyróżniamy trzy algorytmy uczenia zespołowego (ang. ensemble learning):
 
 * **Bagging** - generujemy B-bootstrapowych replikacji zbioru uczącego, na podstawie których tworzymy B klasyfikatorów. Następnie łączymy je w klasyfikator zagregowany, który przydziela dane cechy do klas za pomocą reguły "głosowania większości" (w przypadku remisu wybiera losowo). Każdy klasyfikator powstaje niezależnie (w sensie takim, że wyniki poprzednich nie mają wpływu na generowanie nowych).
-* **boosting** - podobnie jak w bagging, tworzymy klasyfikator zagregowany złożony z wielu pojedynczych klasyfikatorów. Jednak różnica jest taka, że klasyfikatory powstają sekwencyjnie. Na początku każda cecha w zbiorze ma przypisaną taką samą wagę. Z każdą kolejną iteracją natomiast waga zwiększa się dla uprzednio źle sklasyfikowanych przypadków.
-* **random forest** (dla drzew klasyfikacyjnych) - metoda podobna do bagging z tą różnicą, że klasyfikatory powstają na podstawie różnych m-elementowych podzbiorach cech (m mniejsze bądź równe wszystkim cechom).
+* **Boosting** - podobnie jak w bagging, tworzymy klasyfikator zagregowany złożony z wielu pojedynczych klasyfikatorów. Jednak różnica jest taka, że klasyfikatory powstają sekwencyjnie. Na początku każda cecha w zbiorze ma przypisaną taką samą wagę. Z każdą kolejną iteracją natomiast waga zwiększa się dla uprzednio źle sklasyfikowanych przypadków.
+* **Random forest** (dla drzew klasyfikacyjnych) - metoda podobna do bagging z tą różnicą, że klasyfikatory powstają na podstawie różnych m-elementowych podzbiorach cech (m mniejsze bądź równe wszystkim cechom).
 
-```{r}
+```{r wczytanie_win}
 colnames(wine) <- c(
   "Gatunek", "Alkohol", "Kwas_mlekowy", "Popiół", "Zasadowość_popiołu", 
   "Magnez", "Fenole_ogółem", "Flawonoidy", 
@@ -134,23 +135,38 @@ wine_scaled <- wine
 wine_scaled[col] <- scale(wine[col])
 ```
 
-### Drzewa klasyfikacyjne
+Na wykresie przedstawiono pojedyńcze drzewo klasyfikacyjne.
 
-**MOŻE BYĆ NIEPOPRAWNIE W CHUJ**
-
-```{r, cache = TRUE}
+```{r drzewo_klasyfikacyjne, fig.cap="Pojedyńcze drzewo klasyfikacyjne", cache = TRUE}
 mypredict.rpart <- function(object, newdata)  predict(object, newdata=newdata, type="class")
+
 mypredict.boost <- function(object, newdata) as.factor(predict(object, newdata=newdata)$class)
 
-K <- 10
 est <- "632plus"
+K = 10
+
+tree_model <- rpart(Gatunek ~ ., data = wine, method = "class")
+rpart.plot(tree_model, type = 2, extra = 104, fallen.leaves = TRUE)
+
+error.tree <- (errorest(Gatunek ~ ., data = wine,
+                       model = rpart,
+                       predict = mypredict.rpart,
+                       estimator = est,
+                       est.para = control.errorest(nboot = K)))$error
+```
+
+Błąd estymowany metodą bootstrap .632+ wynosi `r round(error.tree, 4)`%. Na jego podstawie określimy poprawę modelu po zastosowaniu metod uczenia zespołowego. 
+
+W tej części analizy do oceny wydajności modelu zostanie wykorzystana wyłącznie metoda .632+, ponieważ koryguje ona obciążenie estymatora (bias) i dostarcza bardziej wiarygodnej oceny błędu generalizacji, zwłaszcza przy ryzyku przeuczenia i ograniczonej liczbie próbek.
+
+
+``` {r drzewa-klasyfikacyjne, cache = TRUE}
+mypredict.rpart <- function(object, newdata)  predict(object, newdata=newdata, type="class")
+
+mypredict.boost <- function(object, newdata) as.factor(predict(object, newdata=newdata)$class)
+
 lista <- list()
 B.vector <- c(1, 5, 10, 20, 30, 40, 50, 100)
-
-error.tree <- (errorest(Gatunek~., data = wine, model = rpart,
-               predict = mypredict.rpart,
-               estimator = est,
-               est.para = control.errorest(nboot = K)))$error
 
 error.bagging <- 0
 error.randomForest <- 0
@@ -183,8 +199,7 @@ for(b in B.vector){
 }
 
 matrix <- do.call(cbind, lista)
-matrix <- rbind(matrix, colSums(matrix)/3)
-rownames(matrix) <- c("Bagging", "Random Forest", "Boosting", "Średnia")
+rownames(matrix) <- c("Bagging", "Random Forest", "Boosting")
 ```
 
 ```{r}
@@ -200,9 +215,11 @@ kable(matrix,
 
 W tej części przeprowadzona będzie klasyfikacja na podstawie metody wektorów nośnych, z podziałem na różne funkcje jądrowe.
 
-**COŚ O TYM CO TO WOGÓLE JEST**
+Metoda SVM jest jedną z najczęściej stosowanych technik uczenia maszynowego w zadaniach klasyfikacyjnych. Jej podstawowym celem jest wyznaczenie hiperpłaszczyzny maksymalnie oddzielającej obserwacje należące do różnych klas, przy jednoczesnym maksymalizowaniu marginesu między klasami.
 
-```{r super-uper-duper-ultra-zajebiste-funkcje, cache = TRUE}
+Dzięki zastosowaniu funkcji jądrowych (kernel functions), SVM umożliwia również skuteczną klasyfikację danych nieliniowo separowalnych poprzez odwzorowanie ich do przestrzeni o wyższej liczbie wymiarów. W niniejszej analizie zostaną porównane różne funkcje jądrowe, w tym liniowa, wielomianowa oraz radialna (RBF), w kontekście ich wpływu na jakość klasyfikacji.
+
+```{r super-uber-duper-ultra-zajebiste-funkcje, cache = TRUE}
 
 C <- 10^(-3:3) #kara
 gamma <- round(seq(from = .01, to = 10, length.out = 10), 2)
@@ -348,6 +365,10 @@ kernel.type.bs <- function(K = 10, size = 2/3, scale = FALSE, kernel){
 ```
 
 ### Jądro liniowe
+
+Przeanalizowano skuteczność klasyfikacyjną z zastosowaniem **jądra liniowego**, zarówno **bez skalowania danych**, jak i **po ich skalowaniu**.
+
+Porównanie wyników dla obu wariantów (ze skalowaniem i bez) pozwala ocenić wpływ przeskalowania zmiennych na jakość klasyfikacji. Ponieważ SVM opiera się na obliczeniach odległości i iloczynów skalarnych, skalowanie danych może znacząco wpłynąć na działanie algorytmu, szczególnie gdy zmienne wejściowe różnią się skalą lub jednostką.
 
 ```{r, cache = TRUE}
 
@@ -756,6 +777,8 @@ elo
 
 e
 
+\newpage
+
 # Analiza skupień – algorytmy grupujące i hierarchiczne
 
 W tym zadaniu zastosujemy i porównamy ze sobą metody analizy skupień - k-średnich i PAM jako algorytmy grupujące, oraz AGNES - algorytm hierarhiczny.
@@ -1120,7 +1143,7 @@ Legenda:
 * 3 - AGNES,
 * 4 - DIANA.
 
-```{r, fig.cap="coś"}
+```{r, fig.cap="coś", cache = TRUE}
 metody <- c("kmeans", "pam", "agnes", "diana")
 K.zakres <- 2:k
 
@@ -1153,7 +1176,7 @@ dunn <- data.frame("Kmeans" = measures[2, , 1],
                    "K" = 2:k)
 ```
 
-```{r, fig.cap="Connectivity"}
+```{r, fig.cap="Connectivity", cache = TRUE}
 max <- max(connectivity[-5])
 
 plot(connectivity$K, connectivity$Kmeans,
@@ -1176,7 +1199,7 @@ Connectivity - im mniejszy, tym lepszy:
 * AGNES - 2 (najlepszy),
 * DIANA - 3.
 
-```{r, fig.cap="Dunn"}
+```{r, fig.cap="Dunn", cache = TRUE}
 max <- max(dunn[-5])
 
 plot(dunn$K, dunn$Kmeans,
@@ -1283,7 +1306,7 @@ kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów, k=2")
 
 \newpage
 
-```{r, fig.cap="AGNES: complete linage, k=2"}
+```{r, fig.cap="AGNES: complete linage, k=2", cache = TRUE}
 glass.agnes.complete <- agnes(x = glass.conf_mat,
                               diss = TRUE,
                               method = "complete")
@@ -1301,7 +1324,7 @@ Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Typ
 
 \newpage
 
-```{r, fig.cap="DIANA, k=3"}
+```{r, fig.cap="DIANA, k=3", cache = TRUE}
 glass.agnes.euclidean <- diana(x = glass.conf_mat,
                             diss = TRUE,
                             metric = "euclidean")
@@ -1317,7 +1340,7 @@ Dokładność (matchedClasses): `r round(compareMatchedClasses(wyniki, Glass$Typ
 
 # Podsumowanie
 
-```{r}
+```{r, cache = TRUE}
 end = Sys.time()
 spend = end - start
 
