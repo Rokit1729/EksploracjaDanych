@@ -828,6 +828,7 @@ gamma <- 10^(-3:3)
 
 kable(kernel.type(kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - wielokrotny podział, bez skalowania") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -840,6 +841,7 @@ Oznacza to, że przy zbyt małej karze za błąd klasyfikacji (**C**) oraz zbyt 
 ```{r, cache = TRUE}
 kable(kernel.type(scale = TRUE, kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - wielokrotny podział, ze skalowaniem") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -848,6 +850,7 @@ kable(kernel.type(scale = TRUE, kernel="sigmoid"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.cv(kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - cross-validation, bez skalowania") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -856,6 +859,7 @@ kable(kernel.type.cv(kernel="sigmoid"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.cv(scale = TRUE, kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - cross-validation, ze skalowaniem") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -864,6 +868,7 @@ kable(kernel.type.cv(scale = TRUE, kernel="sigmoid"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.bs(kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - bootstrap, bez skalowania") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
@@ -872,12 +877,13 @@ kable(kernel.type.bs(kernel="sigmoid"), digits = 2,
 ```{r, cache = TRUE}
 kable(kernel.type.bs(scale = TRUE, kernel="sigmoid"), digits = 2,
       caption = "Jądro sigmoidalne - bootstrap, ze skalowaniem") %>%
+  add_header_above(c("Współcznnik \n kary - C" = 1, "Współczynnik - gamma" = 7)) %>% 
   kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
                 repeat_header_text = "(kontynuacja)",
                 stripe_color = "#B0B0B0")
 ```
 
-Analizując wyniki przedstawione w Tabelach 18–23 dla jądra sigmoidalnego, można zauważyć, że model osiąga najlepsze wyniki klasyfikacyjne przy wartościach parametru **C** mieszczących się w przedziale od 100 do 1000 oraz **gamma** w zakresie od 0.001 do 0.01.
+Analizując wyniki przedstawione w Tabelach 18–23. dla jądra sigmoidalnego, można zauważyć, że model osiąga najlepsze wyniki klasyfikacyjne przy wartościach parametru **C** mieszczących się w przedziale od 100 do 1000 oraz **gamma** w zakresie od 0.001 do 0.01.
 
 ## Porówanie metod
 
@@ -943,7 +949,7 @@ p <- length(Glass) - 1
 ggplot(data.frame(etykiety), aes(x = etykiety, fill = etykiety)) +
   geom_bar() +
   geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) + 
-  labs(x = "Gatunek wina", y = "Liczba wystąpień") +
+  labs(x = "Gatunek szkła", y = "Liczba wystąpień") +
   scale_fill_manual(values = c("tomato", "darkgoldenrod1", "darkgreen",
                                "steelblue","darkblue", "deeppink2")) +
   theme_minimal() +
