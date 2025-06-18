@@ -1004,13 +1004,13 @@ Dla zapewnienia spójności porównania, liczba grup została przyjęta zgodnie 
 
 ### k-średnie
 
-W tej części zastosowano algorytm **k-średnich (k-means)**, który należy do metod niehierarchicznych, opartych na minimalizacji wewnątrzgrupowej sumy kwadratów odległości. Algorytm iteracyjnie przypisuje obserwacje do jednego z `r k` klastrów na podstawie ich podobieństwa, a następnie aktualizuje położenie centroidów, aż do osiągnięcia stabilności układu.
+W tej części zastosowano algorytm **k-średnich**, który należy do metod niehierarchicznych, opartych na minimalizacji wewnątrzgrupowej sumy kwadratów odległości. Algorytm iteracyjnie przypisuje obserwacje do jednego z `r k` klastrów na podstawie ich podobieństwa, a następnie aktualizuje położenie centroidów, aż do osiągnięcia stabilności układu.
 
 Grupowanie przeprowadzono na danych uprzednio poddanych standaryzacji, co zapewnia równoważny wpływ wszystkich zmiennych na wynik końcowy. Wyniki grupowania zostaną porównane z rzeczywistymi etykietami klas w celu oceny skuteczności metody.
 
 
-```{r, fig.cap="PCA, kolory - rzeczywiste, kształt - wyniki"}
-kmeans.k3 <- kmeans(glass, centers = k, iter.max = 100)
+```{r, fig.cap="Wizualizacja danych po grupowania metodą k-średnich - PCA"}
+kmeans.k3 <- kmeans(glass, centers = k, iter.max = 1000)
 wyniki <- kmeans.k3$cluster
 
 plot(pca_result$x[, 1], pca_result$x[, 2],
@@ -1019,15 +1019,21 @@ plot(pca_result$x[, 1], pca_result$x[, 2],
      pch = wyniki)
 ```
 
-Gównianie mu poszło
+Na Wykresie 6. zaprezentowano rezultaty grupowania uzyskane metodą k-średnich. Kolory odpowiadają rzeczywistym klasom szkła, natomiast kształty punktów reprezentują przypisanie obserwacji do klastrów uzyskanych w wyniku działania algorytmu.
 
-```{r, fig.cap="Wykres RI od Na, aby pokazać gdzie są wyznaczone centra skupień"}
+Już na pierwszy rzut oka można zauważyć, że przypisania do grup są w dużym stopniu niespójne z rzeczywistymi etykietami - klasy zostały znacząco pomieszane. Świadczy to o ograniczonej skuteczności metody k-średnich w odtwarzaniu rzeczywistej struktury danych dla zbioru *glass*.
+
+Aby dokładniej zilustrować charakter uzyskanych grupowań, na kolejnym wykresie przedstawiono zależność współczynnika załamania światła (*Refractive Index*, RI) od procentowej zawartości sodu (Na). Wizualizacja ta pozwala lepiej ocenić, w jakim stopniu podział na klastry odpowiada naturalnym różnicom chemicznym między próbkami szkła.
+
+```{r, fig.cap="Zależnośc współczynnika załamania światła od procentu masowego sodu z kolorami i kształtami klas - zaznaczone centroidy z metody k-średnich"}
 plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
      col = Glass$Type, pch = wyniki)
 points(kmeans.k3$centers[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
 ```
 
-Centra wywalone w kosmos, ale fajnie
+Na Wykresie 7. przedstawiono rozmieszczenie centrów skupień wyznaczonych przez algorytm k-średnich. Pomimo przeprowadzenia 1000 iteracji w celu osiągnięcia stabilnej konwergencji, położenie centroidów wydaje się dość przypadkowe. W ich bezpośrednim otoczeniu znajdują się obserwacje należące do różnych, rzeczywistych klas, co wskazuje na brak wyraźnego dopasowania modelu do rzeczywistej struktury danych.
+
+Taki efekt może być częściowo wynikiem ograniczeń związanych z wizualizacją — przedstawione punkty i centra skupień znajdują się w przestrzeni wielowymiarowej, natomiast wykres stanowi jedynie jej uproszczoną projekcję na dwie zmienne. Aby dokładniej ocenić skuteczność przypisania obserwacji do klastrów, przyjrzyjmy się **macierzy pomyłek**, która zestawia rzeczywiste klasy z przypisaniami wygenerowanymi przez model. Pozwoli to w sposób obiektywny ocenić trafność grupowania.
 
 ```{r}
 matrix <- table(wyniki, Glass$Type)
@@ -1040,16 +1046,26 @@ matrix  <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
-kable(matrix , caption = "Macierz błędów; metoda k-średnich")
+kable(matrix, caption = "Macierz pomyłek - k-średnie") %>%
+  add_header_above(c("Prawdziwa \n klasa" = 1, "Przewidywana klasa" = 6)) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+wynik_machen_1 <- round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag * 100, 2)
 ```
 
-Dokładność (macierz): `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+Do oceny dokładności grupowania zastosowano metodę **matchClasses** z parametrem "exact", która pozwala na precyzyjne dopasowanie przypisań klastrów do rzeczywistych etykiet klas.
 
-Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
+Na podstawie tej metody wyznaczono, że dokładność klasyfikacji wynosi `r wynik_machen_1`%. Wynik ten stanowi miarodajną miarę skuteczności zastosowanego algorytmu grupowania w odzwierciedlaniu rzeczywistej struktury danych.
 
 ### Partitioning Around Medoids (PAM)
 
-```{r, fig.cap="coś"}
+W tej części zastosowano algorytm **Partitioning Around Medoids (PAM)**, który podobnie jak k-średnie należy do metod grupujących, jednak zamiast **centroidów** wykorzystuje rzeczywiste obiekty zwane **medoidami** jako reprezentanty klastrów.
+
+Metoda PAM jest bardziej odporna na wartości odstające oraz szum w danych, co czyni ją szczególnie przydatną w analizie zbiorów, gdzie występują takie anomalie. Grupowanie przeprowadzono dla liczby klastrów równej rzeczywistej liczbie klas w zbiorze danych **glass**, a wyniki zostaną poddane ocenie pod kątem zgodności z rzeczywistymi etykietami.
+
+```{r, fig.cap="Wizualizacja danych po grupowania metodą PAM - PCA"}
 glass.conf_mat <- daisy(glass)
 
 glass.pam7 <- pam(x=glass.conf_mat, diss=TRUE, k=k)
@@ -1062,9 +1078,11 @@ plot(pca_result$x[, 1], pca_result$x[, 2], xlab = xlab1, ylab = ylab1,
      col = wyniki, pch = as.numeric(Glass$Type))
 ```
 
-Też słabo
+Z Wykresu 8. można zauważyć, że algorytm PAM doprowadził do lepszego rozdzielenia klas w porównaniu z metodą k-średnich — obserwacje wydają się być przypisane do klastrów w sposób bardziej uporządkowany i częściowo zgodny z rzeczywistymi etykietami.
 
-```{r, fig.cap="coś, z medoidami"}
+Niemniej jednak, ocena „na oko” może być myląca i niewystarczająca do rzetelnej analizy jakości grupowania. Subiektywne wrażenie nie zastąpi obiektywnych miar skuteczności. W związku z tym konieczne jest przeprowadzenie dokładniejszej oceny, na przykład za pomocą **macierzy pomyłek** oraz miary dokładności dopasowania, aby jednoznacznie stwierdzić, na ile grupowanie rzeczywiście odwzorowuje strukturę danych.
+
+```{r, fig.cap="Zależnośc współczynnika załamania światła od procentu masowego sodu z kolorami i kształtami klas - zaznaczone medoidy z metody PAM"}
 medoids <- glass[glass.pam7$id.med, ]
 
 plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
@@ -1072,31 +1090,40 @@ plot(glass$RI, glass$Na, xlab = "RI", ylab = "Na",
 points(medoids[,c("RI", "Na")], pch=16, cex=1.5, col=1:6)
 ```
 
-Meh
+Z Wykresu 9. wynika, że poza lepszym odwzorowaniem rzeczywistych klas, metoda PAM skuteczniej lokalizuje reprezentatywne punkty – **medoidy** – w przestrzeni danych. W przeciwieństwie do metody k-średnich, gdzie centra skupień mogą przyjmować pozycje oderwane od rzeczywistych obserwacji, medoidy znajdują się bezpośrednio wśród danych i w wielu przypadkach są położone blisko środka odpowiadającej im grupy.
+
+Taka właściwość przekłada się na większą interpretowalność i odporność algorytmu na obserwacje odstające. Szczegółowe informacje dotyczące wybranych medoidów oraz odpowiadających im klas przedstawiono w Tabeli 26..
 
 ```{r}
-kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów, k=6")
+kable(Glass.copy[glass.pam7$id.med, ], caption="Dane medoidów") %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
 ```
 
 ```{r}
 matrix <- table(wyniki, Glass$Type)
 
 #Najlepsze dopasowanie
-mapping <- solve_LSAP(matrix , maximum = TRUE)
+mapping <- solve_LSAP(matrix, maximum = TRUE)
 wyniki1 <- mapping[wyniki]
 
-conf_mat <- table(wyniki1, Glass$Type)
+matrix  <- table(wyniki1, Glass$Type)
 rownames(matrix) <- as.character(c(1:3, 5:7))
 colnames(matrix) <- as.character(c(1:3, 5:7))
 
-kable(matrix, caption = "Macierz błędów; metoda k-średnich")
+kable(matrix, caption = "Macierz pomyłek - PAM") %>%
+  add_header_above(c("Prawdziwa \n klasa" = 1, "Przewidywana klasa" = 6)) %>% 
+  kable_styling(latex_options = c("striped", "hold_position", "repeat_header"), 
+                repeat_header_text = "(kontynuacja)",
+                stripe_color = "#B0B0B0")
+
+wynik_machen_2 <- round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag * 100, 2)
 ```
 
-Dokładność: `r round(sum(diag(matrix))/sum(matrix)*100, 2)`%.
+Dokładność klasyfikacji uzyskana metodą PAM wynosi `r wynik_machen_2`%. Choć rezultat ten przewyższa wynik osiągnięty przez algorytm k-średnich, nadal nie jest on satysfakcjonujący z punktu widzenia jakości odwzorowania rzeczywistej struktury danych.
 
-Dokładność (matchClasses, "exact"): `r round(compareMatchedClasses(wyniki, Glass$Type, method="exact")$diag*100, 2)`%.
-
-Gorzej niż k-średnie *shocked emoji*.
+Oznacza to, że mimo poprawy, metoda PAM nie zapewnia jeszcze precyzyjnego rozróżnienia klas w zbiorze *glass* i wymaga dalszej analizy porównawczej z innymi podejściami, takimi jak algorytmy hierarchiczne.
 
 ### Agglomerative Nesting (AGNES)
 
