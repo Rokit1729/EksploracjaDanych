@@ -9,9 +9,8 @@ toc: true
 lof: true
 lot: true
 header-includes:
-  - \usepackage[T1]{fontenc}
+  - \usepackage[OT4]{polski}
   - \usepackage[utf8]{inputenc}
-  - \usepackage[polish]{babel}
   - \usepackage{graphicx}
   - \usepackage{float}
   - \renewcommand{\contentsname}{Spis treści}
@@ -956,7 +955,7 @@ ggplot(data.frame(etykiety), aes(x = etykiety, fill = etykiety)) +
   theme(legend.position = "none")
 ```
 
-Z Wykresu 1. można odczytać, że liczba obserwacji poszczególnych klas w zbiorze danych jest bardzo zróżnicowana. Siedemdziesiąt obserwacji lub więcej posiadają typy 1. oraz 2. (co stanowi `r round((70+76)/214*100, 2)`% danych), reszta już po mniej niż 30 obserwacji.
+Z Wykresu 2. można odczytać, że liczba obserwacji poszczególnych klas w zbiorze danych jest bardzo zróżnicowana. Siedemdziesiąt obserwacji lub więcej posiadają typy 1. oraz 2. (co stanowi `r round((70+76)/214*100, 2)`% danych), reszta już po mniej niż 30 obserwacji.
 
 ```{r, fig.cap="Wykres pudełkowy, zmienne bez standaryzacji"}
 boxplot(Glass[-10], las=2, col="tomato")
